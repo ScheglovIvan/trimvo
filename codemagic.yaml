@@ -12,6 +12,7 @@ workflows:
       vars:
         BUNDLE_ID: "com.batteam.trimvo"
         XCODE_PROJECT: "ios/Runner.xcodeproj"
+        XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
         APP_STORE_APPLE_ID: 6776281462
       xcode: latest
@@ -19,6 +20,15 @@ workflows:
       - name: Clean Derived Data
         script: |
           rm -rf ~/Library/Developer/Xcode/DerivedData
+
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+
+      - name: Pod install
+        script: |
+          cd $CM_BUILD_DIR/ios
+          pod install
 
       - name: Set up provisioning profiles settings on Xcode project
         script: xcode-project use-profiles
@@ -51,7 +61,7 @@ workflows:
       - name: Build ipa for distribution
         script: |
           xcode-project build-ipa \
-            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --workspace "$CM_BUILD_DIR/$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
 
     artifacts:

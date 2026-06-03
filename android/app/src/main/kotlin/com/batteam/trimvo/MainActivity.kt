@@ -1,4 +1,4 @@
-package com.aiapp.hypcut.hyper_cut
+package com.batteam.trimvo
 
 import io.flutter.embedding.android.FlutterActivity
 

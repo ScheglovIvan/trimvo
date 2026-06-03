@@ -1,104 +1,76 @@
 workflows:
-
-  # ── iOS App Store / TestFlight ─────────────────────────────────────────────
-  ios-release:
-    name: iOS Release (App Store)
-    max_build_duration: 60
+  ios-native-quick-start:
+    name: iOS Native
+    max_build_duration: 120
     instance_type: mac_mini_m2
-
+    integrations:
+      app_store_connect: TrimvoApiKey
     environment:
-      # Code signing — настраивается в Codemagic UI:
-      # App Store Connect > Teams > Code signing identities
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.aiapp.hypcut.hyperCut
-
-      # Версия Flutter (можно заменить на конкретную: '3.19.6')
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-
-      # Переменные окружения — задаются в Codemagic UI (зашифрованные):
-      # API_BASE_URL      = https://api.trimvo.app/v1
-      # STORAGE_BASE_URL  = https://storage.trimvo.app
+        bundle_identifier: com.batteam.trimvo
       vars:
-        BUNDLE_ID: com.aiapp.hypcut.hyperCut
-
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-
+        BUNDLE_ID: "com.batteam.trimvo"
+        XCODE_PROJECT: "Runner.xcodeproj"
+        XCODE_SCHEME: "Runner"
+        APP_STORE_APPLE_ID: 6776281462
+      xcode: latest
     scripts:
-      - name: Flutter pub get
-        script: flutter pub get
-
-      - name: Pod install
+      - name: Clean Derived Data
         script: |
-          cd ios
-          pod install
+          rm -rf ~/Library/Developer/Xcode/DerivedData
 
-      - name: Build iOS IPA
+      - name: Set up provisioning profiles settings on Xcode project
+        script: xcode-project use-profiles
+
+      - name: Fix Package.resolved if corrupted
         script: |
-          flutter build ipa --release \
-            --dart-define=API_BASE_URL=$API_BASE_URL \
-            --dart-define=STORAGE_BASE_URL=$STORAGE_BASE_URL
+          if [ -f "$CM_BUILD_DIR/$XCODE_PROJECT/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" ]; then
+            rm "$CM_BUILD_DIR/$XCODE_PROJECT/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+          fi
+          xcodebuild -resolvePackageDependencies -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+                     -scheme "$XCODE_SCHEME"
+
+#      - name: Generate Core Data Files
+#        script: |
+#          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+#                     -scheme "$XCODE_SCHEME" \
+#                     -sdk iphonesimulator \
+#                     -destination 'platform=iOS Simulator,name=iPhone 14' \
+#                     -dry-run \
+#                     -showBuildSettings
+
+      - name: Increment build number
+        script: |
+          cd $CM_BUILD_DIR
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID")
+          NEW_BUILD_NUMBER=$(($LATEST_BUILD_NUMBER + 1))
+          agvtool new-version -all $NEW_BUILD_NUMBER
+
+      - name: Build ipa for distribution
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
 
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
 
     publishing:
-      app_store_connect:
-        auth: integration          # App Store Connect API key в Codemagic UI
+      email:
+        recipients:
+          - user_1@example.com
+          - user_2@example.com
+        notify:
+          success: true
+          failure: false
+      app_store_connect: 
+        auth: integration
         submit_to_testflight: true
-        cancel_previous_submissions: true
-      email:
-        recipients:
-          - vektor9966@gmail.com
-        notify:
-          success: true
-          failure: true
-
-  # ── iOS Ad Hoc (для тестеров без TestFlight) ───────────────────────────────
-  ios-adhoc:
-    name: iOS Ad Hoc (Testers)
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-
-    environment:
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.aiapp.hypcut.hyperCut
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-
-    scripts:
-      - name: Flutter pub get
-        script: flutter pub get
-
-      - name: Pod install
-        script: |
-          cd ios
-          pod install
-
-      - name: Build iOS IPA (Ad Hoc)
-        script: |
-          flutter build ipa --release \
-            --dart-define=API_BASE_URL=$API_BASE_URL \
-            --dart-define=STORAGE_BASE_URL=$STORAGE_BASE_URL \
-            --export-options-plist=/Users/builder/export_options.plist
-
-    artifacts:
-      - build/ios/ipa/*.ipa
-
-    publishing:
-      email:
-        recipients:
-          - vektor9966@gmail.com
-        notify:
-          success: true
-          failure: true
+        beta_groups:
+          - group name 1
+          - group name 2
+        submit_to_app_store: false

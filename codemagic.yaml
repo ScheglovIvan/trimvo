@@ -11,7 +11,7 @@ workflows:
         bundle_identifier: com.batteam.trimvo
       vars:
         BUNDLE_ID: "com.batteam.trimvo"
-        XCODE_PROJECT: "Runner.xcodeproj"
+        XCODE_PROJECT: "ios/Runner.xcodeproj"
         XCODE_SCHEME: "Runner"
         APP_STORE_APPLE_ID: 6776281462
       xcode: latest

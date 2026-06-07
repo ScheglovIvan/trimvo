@@ -75,11 +75,13 @@ workflows:
     publishing:
       email:
         recipients:
-          - vektor9966@gmail.com
+          - milan@batteam.store
         notify:
           success: true
           failure: true
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        beta_groups:
+          - TEST
         submit_to_app_store: false

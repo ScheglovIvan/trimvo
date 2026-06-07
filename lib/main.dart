@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trimvo/core/router/app_router.dart';
 import 'package:trimvo/core/theme/app_theme.dart';
-import 'package:trimvo/providers/auth_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,25 +20,11 @@ void main() {
   ]);
 
   runApp(const ProviderScope(child: TrimvoApp()));
+
 }
 
-class TrimvoApp extends ConsumerStatefulWidget {
+class TrimvoApp extends StatelessWidget {
   const TrimvoApp({super.key});
-
-  @override
-  ConsumerState<TrimvoApp> createState() => _TrimvoAppState();
-}
-
-class _TrimvoAppState extends ConsumerState<TrimvoApp> {
-  @override
-  void initState() {
-    super.initState();
-    ref.read(authProvider.notifier).loadFromStorage().then((_) {
-      if (ref.read(authProvider).isLoggedIn) {
-        ref.read(authProvider.notifier).refreshBalance();
-      }
-    });
-  }
 
   @override
   Widget build(BuildContext context) {

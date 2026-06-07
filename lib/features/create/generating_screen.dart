@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -143,6 +144,7 @@ class _PollingViewState extends ConsumerState<_PollingView> {
   @override
   void dispose() {
     _fakeTimer?.cancel();
+    ref.read(jobsProvider.notifier).stopPolling();
     super.dispose();
   }
 
@@ -326,7 +328,10 @@ class _BlurredBackground extends StatelessWidget {
           child: isNetwork
               ? CachedNetworkImage(
                   imageUrl: imagePath,
+                  cacheManager: AppCacheManager(),
                   fit: BoxFit.cover,
+                  memCacheWidth: 400,
+                  memCacheHeight: 800,
                   placeholder: (_, __) =>
                       const ColoredBox(color: AppColors.backgroundPrimary),
                   errorWidget: (_, __, ___) =>
@@ -532,12 +537,14 @@ class _HistoryViewState extends ConsumerState<_HistoryView> {
           child: Container(
             color: AppColors.backgroundCard,
             child: job.resultUrl != null
-                ? Image.network(
-                    job.resultUrl!,
+                ? CachedNetworkImage(
+                    imageUrl: job.resultUrl!,
+                    cacheManager: AppCacheManager(),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child:
-                          Icon(Icons.videocam, color: AppColors.textHint),
+                    memCacheWidth: 350,
+                    memCacheHeight: 620,
+                    errorWidget: (_, __, ___) => const Center(
+                      child: Icon(Icons.videocam, color: AppColors.textHint),
                     ),
                   )
                 : const Center(

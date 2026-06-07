@@ -3,7 +3,7 @@ class ApiConstants {
 
   static const String apiBase = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000/v1',
+    defaultValue: 'https://api.trimvo.xyz/v1',
   );
 
   static const String minioBase = String.fromEnvironment(

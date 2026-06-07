@@ -49,7 +49,7 @@ class JobModel {
         if (w != null && h != null && h > 0) return w / h;
       }
     }
-    // Image jobs without ratio → square
+    // Image jobs without ratio → square fallback; API returns the real ratio when known
     if (isImageJob) return 1.0;
     // Video jobs → portrait 9:16
     return 9 / 16;

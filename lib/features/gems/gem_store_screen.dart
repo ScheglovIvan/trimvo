@@ -7,14 +7,45 @@ import 'package:trimvo/core/theme/app_gradients.dart';
 import 'package:trimvo/models/gem_package_model.dart';
 import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/providers/gem_packages_provider.dart';
+import 'package:trimvo/providers/iap_provider.dart';
 
-class GemStoreScreen extends ConsumerWidget {
+class GemStoreScreen extends ConsumerStatefulWidget {
   const GemStoreScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final gems = ref.watch(authProvider).gems;
+  ConsumerState<GemStoreScreen> createState() => _GemStoreScreenState();
+}
+
+class _GemStoreScreenState extends ConsumerState<GemStoreScreen> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<IapState>(iapProvider, (prev, next) {
+      if (!mounted) return;
+      if (next.error != null && next.error != prev?.error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.error!)),
+        );
+        ref.read(iapProvider.notifier).clearError();
+      }
+      if (next.lastPurchaseType == 'gems' && prev?.lastPurchaseType != 'gems') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gems added to your balance!')),
+        );
+        ref.read(iapProvider.notifier).clearLastPurchase();
+      }
+      if (next.lastPurchaseType == 'restore' && prev?.lastPurchaseType != 'restore') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Purchases restored successfully!')),
+        );
+        ref.read(iapProvider.notifier).clearLastPurchase();
+      }
+    });
+
+    final auth = ref.watch(authProvider);
+    final gems = auth.gems;
+    final isSvip = auth.isSvip;
     final packagesAsync = ref.watch(gemPackagesProvider);
+    final iapLoading = ref.watch(iapProvider).isLoading;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
@@ -29,8 +60,10 @@ class GemStoreScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _buildBalance(gems),
-                    const SizedBox(height: 16),
-                    _buildSvipBanner(context),
+                    if (!isSvip) ...[
+                      const SizedBox(height: 16),
+                      _buildSvipBanner(context),
+                    ],
                     const SizedBox(height: 20),
                     packagesAsync.when(
                       loading: () => const SizedBox(
@@ -42,30 +75,25 @@ class GemStoreScreen extends ConsumerWidget {
                       ),
                       error: (_, __) => const SizedBox.shrink(),
                       data: (packages) =>
-                          _buildPackagesSection(context, packages),
+                          _buildPackagesSection(context, packages, iapLoading),
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      'Purchases are managed by Google Play.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     GestureDetector(
-                      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Coming soon')),
-                      ),
+                      onTap: iapLoading
+                          ? null
+                          : () => ref.read(iapProvider.notifier).restorePurchases(),
                       child: Text(
                         'Restore Purchases',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: iapLoading
+                              ? AppColors.textHint
+                              : AppColors.textSecondary,
                           decoration: TextDecoration.underline,
-                          decorationColor: AppColors.textSecondary,
+                          decorationColor: iapLoading
+                              ? AppColors.textHint
+                              : AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -111,19 +139,7 @@ class GemStoreScreen extends ConsumerWidget {
               ),
             ),
           ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: AppColors.backgroundCard,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.list_rounded,
-              color: AppColors.textSecondary,
-              size: 20,
-            ),
-          ),
+          const SizedBox(width: 40),
         ],
       ),
     );
@@ -219,7 +235,7 @@ class GemStoreScreen extends ConsumerWidget {
   }
 
   Widget _buildPackagesSection(
-      BuildContext context, List<GemPackageModel> packages) {
+      BuildContext context, List<GemPackageModel> packages, bool iapLoading) {
     final sorted = List<GemPackageModel>.from(packages)
       ..sort((a, b) => a.order.compareTo(b.order));
     final regular = sorted.where((p) => !p.isPopular).toList();
@@ -236,12 +252,23 @@ class GemStoreScreen extends ConsumerWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: regular
-                .map((p) => _GemPackageCard(package: p))
+                .map((p) => _GemPackageCard(
+                      package: p,
+                      isLoading: iapLoading,
+                      onTap: () =>
+                          ref.read(iapProvider.notifier).purchaseGemPackage(p),
+                    ))
                 .toList(),
           ),
         for (final p in popular) ...[
           const SizedBox(height: 12),
-          _GemPackageCard(package: p, fullWidth: true),
+          _GemPackageCard(
+            package: p,
+            fullWidth: true,
+            isLoading: iapLoading,
+            onTap: () =>
+                ref.read(iapProvider.notifier).purchaseGemPackage(p),
+          ),
         ],
       ],
     );
@@ -253,10 +280,17 @@ class GemStoreScreen extends ConsumerWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _GemPackageCard extends StatelessWidget {
-  const _GemPackageCard({required this.package, this.fullWidth = false});
+  const _GemPackageCard({
+    required this.package,
+    required this.onTap,
+    this.fullWidth = false,
+    this.isLoading = false,
+  });
 
   final GemPackageModel package;
+  final VoidCallback onTap;
   final bool fullWidth;
+  final bool isLoading;
 
   String get _priceLabel {
     final amount = package.price % 1 == 0
@@ -280,8 +314,7 @@ class _GemPackageCard extends StatelessWidget {
 
   Widget _buildGrid(BuildContext context) {
     return GestureDetector(
-      onTap: () => ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Purchase coming soon'))),
+      onTap: isLoading ? null : onTap,
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -329,8 +362,7 @@ class _GemPackageCard extends StatelessWidget {
 
   Widget _buildFullWidth(BuildContext context) {
     return GestureDetector(
-      onTap: () => ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Purchase coming soon'))),
+      onTap: isLoading ? null : onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -391,6 +423,13 @@ class _GemPackageCard extends StatelessWidget {
   }
 
   Widget _buildPriceButton({required bool isPopular}) {
+    if (isLoading) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentPurple),
+      );
+    }
     if (isPopular) {
       return Container(
         padding:

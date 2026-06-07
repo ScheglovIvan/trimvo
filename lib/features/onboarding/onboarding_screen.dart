@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trimvo/core/theme/app_colors.dart';
 import 'package:trimvo/core/theme/app_text_styles.dart';
 import 'package:trimvo/shared/widgets/custom_button.dart';
 import 'package:trimvo/shared/widgets/local_background_video.dart';
+
+const _onboardingSeenKey = 'onboarding_seen';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -51,7 +54,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           _BringToLifePage(
             currentPage: _currentPage,
-            onContinue: () => context.go('/home'),
+            onContinue: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool(_onboardingSeenKey, true);
+              if (context.mounted) context.go('/home');
+            },
           ),
         ],
       ),

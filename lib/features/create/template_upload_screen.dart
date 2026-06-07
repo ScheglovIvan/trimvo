@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,7 @@ import 'package:trimvo/providers/jobs_provider.dart';
 import 'package:trimvo/providers/pricing_provider.dart';
 import 'package:trimvo/providers/templates_provider.dart';
 import 'package:trimvo/services/api_service.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 
 class TemplateUploadScreen extends ConsumerStatefulWidget {
   const TemplateUploadScreen({super.key, required this.templateId});
@@ -110,8 +112,10 @@ class _TemplateUploadScreenState extends ConsumerState<TemplateUploadScreen> {
           'photo_url': photoUrl1,
       };
 
+      // Use widget.templateId (from URL params) — template.id may be empty
+      // if the detail endpoint omits the id field in its response.
       final jobId =
-          await ref.read(jobsProvider.notifier).createJob(template.id, options);
+          await ref.read(jobsProvider.notifier).createJob(widget.templateId, options);
       await ref.read(authProvider.notifier).refreshBalance();
 
       if (context.mounted) {
@@ -590,16 +594,21 @@ class _PhotoSlot extends StatelessWidget {
 
   Widget _buildFilledSlot(String path) {
     return Stack(
+      fit: StackFit.expand,
       children: [
+        const ColoredBox(color: AppColors.backgroundCard),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: path.startsWith('http')
-              ? Image.network(
-                  path,
+              ? CachedNetworkImage(
+                  imageUrl: path,
+                  cacheManager: AppCacheManager(),
                   fit: BoxFit.cover,
                   width: double.infinity,
                   height: double.infinity,
-                  errorBuilder: (_, __, ___) =>
+                  memCacheWidth: 480,
+                  memCacheHeight: 480,
+                  errorWidget: (_, __, ___) =>
                       const ColoredBox(color: AppColors.backgroundCard),
                 )
               : Image.file(

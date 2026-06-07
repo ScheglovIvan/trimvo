@@ -7,19 +7,31 @@ class JobsState {
   const JobsState({
     this.jobs = const [],
     this.pollingJobId,
+    this.page = 0,
+    this.hasMore = true,
+    this.isLoadingMore = false,
   });
 
   final List<JobModel> jobs;
   final String? pollingJobId;
+  final int page;
+  final bool hasMore;
+  final bool isLoadingMore;
 
   JobsState copyWith({
     List<JobModel>? jobs,
     String? pollingJobId,
     bool clearPolling = false,
+    int? page,
+    bool? hasMore,
+    bool? isLoadingMore,
   }) {
     return JobsState(
       jobs: jobs ?? this.jobs,
       pollingJobId: clearPolling ? null : (pollingJobId ?? this.pollingJobId),
+      page: page ?? this.page,
+      hasMore: hasMore ?? this.hasMore,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
     );
   }
 }
@@ -120,11 +132,43 @@ class JobsNotifier extends StateNotifier<JobsState> {
   }
 
   Future<void> getUserJobs() async {
-    final items = await ApiService.getUserJobs();
+    const perPage = 20;
+    final data = await ApiService.getUserJobs(page: 1, perPage: perPage);
+    final items = data['items'] as List<dynamic>? ?? [];
+    final total = (data['total'] as num?)?.toInt();
     final jobs = items
         .map((e) => JobModel.fromJson(e as Map<String, dynamic>))
         .toList();
-    state = state.copyWith(jobs: jobs);
+    state = state.copyWith(
+      jobs: jobs,
+      page: 1,
+      hasMore: total != null ? jobs.length < total : jobs.length >= perPage,
+      isLoadingMore: false,
+    );
+  }
+
+  Future<void> loadMoreJobs() async {
+    if (!state.hasMore || state.isLoadingMore) return;
+    state = state.copyWith(isLoadingMore: true);
+    try {
+      const perPage = 20;
+      final nextPage = state.page + 1;
+      final data = await ApiService.getUserJobs(page: nextPage, perPage: perPage);
+      final items = data['items'] as List<dynamic>? ?? [];
+      final total = (data['total'] as num?)?.toInt();
+      final newJobs = items
+          .map((e) => JobModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final merged = [...state.jobs, ...newJobs];
+      state = state.copyWith(
+        jobs: merged,
+        page: nextPage,
+        hasMore: total != null ? merged.length < total : newJobs.length >= perPage,
+        isLoadingMore: false,
+      );
+    } catch (_) {
+      state = state.copyWith(isLoadingMore: false);
+    }
   }
 
   Future<void> fetchImageJobDetails() async {

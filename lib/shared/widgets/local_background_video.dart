@@ -14,14 +14,26 @@ class LocalBackgroundVideo extends StatefulWidget {
   State<LocalBackgroundVideo> createState() => _LocalBackgroundVideoState();
 }
 
-class _LocalBackgroundVideoState extends State<LocalBackgroundVideo> {
+class _LocalBackgroundVideoState extends State<LocalBackgroundVideo>
+    with WidgetsBindingObserver {
   VideoPlayerController? _ctrl;
   bool _ready = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initVideo();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _ctrl?.pause();
+    } else if (state == AppLifecycleState.resumed) {
+      if (_ready) _ctrl?.play();
+    }
   }
 
   Future<void> _initVideo() async {
@@ -37,13 +49,28 @@ class _LocalBackgroundVideoState extends State<LocalBackgroundVideo> {
           _ready = true;
         });
       } else {
+        ctrl.pause();
         ctrl.dispose();
       }
     } catch (_) {}
   }
 
   @override
+  void deactivate() {
+    _ctrl?.pause();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    if (_ready) _ctrl?.play();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ctrl?.pause();
     _ctrl?.dispose();
     super.dispose();
   }

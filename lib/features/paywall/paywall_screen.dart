@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:trimvo/core/theme/app_colors.dart';
+import 'package:trimvo/providers/iap_provider.dart';
+import 'package:trimvo/providers/subscription_plans_provider.dart';
 import 'package:trimvo/shared/widgets/local_background_video.dart';
 
 const _vipGradient = LinearGradient(
@@ -26,16 +29,16 @@ enum _Plan { yearly, weekly }
 
 enum _Tier { vip, svip }
 
-class PaywallScreen extends StatefulWidget {
+class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key, this.initialSvip = false});
 
   final bool initialSvip;
 
   @override
-  State<PaywallScreen> createState() => _PaywallScreenState();
+  ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
 }
 
-class _PaywallScreenState extends State<PaywallScreen> {
+class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   _Plan _plan = _Plan.weekly;
   late _Tier _tier;
 
@@ -52,6 +55,26 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   bool get _isVip => _tier == _Tier.vip;
 
+  SubscriptionPlanModel? _resolveSelectedPlan() {
+    final plans = ref.read(subscriptionPlansProvider).valueOrNull;
+    if (plans == null || plans.isEmpty) return null;
+    final tier = _isVip ? 'vip' : 'svip';
+    final period = _plan == _Plan.weekly ? 'weekly' : 'yearly';
+    return plans.where((p) => p.tier == tier && p.period == period).firstOrNull
+        ?? plans.where((p) => p.tier == tier).firstOrNull;
+  }
+
+  void _onPurchaseTap() {
+    final plan = _resolveSelectedPlan();
+    if (plan == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Plan not available')),
+      );
+      return;
+    }
+    ref.read(iapProvider.notifier).purchaseSubscription(plan);
+  }
+
   LinearGradient get _activeGradient => _isVip ? _vipGradient : _svipGradient;
 
   String get _buttonLabel {
@@ -63,6 +86,31 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<IapState>(iapProvider, (prev, next) {
+      if (!mounted) return;
+      if (next.error != null && next.error != prev?.error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(next.error!)),
+        );
+        ref.read(iapProvider.notifier).clearError();
+      }
+      if (next.lastPurchaseType == 'subscription' &&
+          prev?.lastPurchaseType != 'subscription') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Subscription activated!')),
+        );
+        ref.read(iapProvider.notifier).clearLastPurchase();
+        context.go('/home');
+      }
+      if (next.lastPurchaseType == 'restore' &&
+          prev?.lastPurchaseType != 'restore') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Purchases restored!')),
+        );
+        ref.read(iapProvider.notifier).clearLastPurchase();
+      }
+    });
+
     final screenH = MediaQuery.of(context).size.height;
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
@@ -315,25 +363,112 @@ class _PaywallScreenState extends State<PaywallScreen> {
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildPlanCards() {
+    final plansAsync = ref.watch(subscriptionPlansProvider);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         transitionBuilder: (child, animation) =>
             FadeTransition(opacity: animation, child: child),
-        child: _isVip ? _buildVipCards() : _buildSvipCards(),
+        child: plansAsync.when(
+          loading: () => _buildCardsShimmer(),
+          error: (_, __) => _isVip ? _buildVipCardsFallback() : _buildSvipCardsFallback(),
+          data: (plans) {
+            final tier = _isVip ? 'vip' : 'svip';
+            final filtered = plans.where((p) => p.tier == tier).toList()
+              ..sort((a, b) {
+                const order = ['lifetime', 'yearly', 'weekly'];
+                return order.indexOf(a.period).compareTo(order.indexOf(b.period));
+              });
+            if (filtered.isEmpty) {
+              return _isVip ? _buildVipCardsFallback() : _buildSvipCardsFallback();
+            }
+            return _buildDynamicCards(filtered);
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildVipCards() {
+  Widget _buildCardsShimmer() {
+    return Column(
+      key: const ValueKey('shimmer'),
+      children: [
+        _cardShimmer(),
+        const SizedBox(height: 12),
+        _cardShimmer(),
+      ],
+    );
+  }
+
+  Widget _cardShimmer() {
+    return Container(
+      height: 86,
+      decoration: BoxDecoration(
+        color: AppColors.backgroundCard,
+        borderRadius: BorderRadius.circular(24),
+      ),
+    );
+  }
+
+  Widget _buildDynamicCards(List<SubscriptionPlanModel> plans) {
+    final tierKey = _isVip ? 'vip' : 'svip';
+    // Select the first plan as default if nothing selected yet
+    final selectedPeriod = _plan == _Plan.yearly ? 'yearly' : _plan == _Plan.weekly ? 'weekly' : 'lifetime';
+
+    return Column(
+      key: ValueKey(tierKey),
+      children: [
+        for (var i = 0; i < plans.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          Builder(builder: (_) {
+            final p = plans[i];
+            final isSelected = p.period == selectedPeriod ||
+                (i == 0 && !plans.any((x) => x.period == selectedPeriod));
+            return _PlanCard(
+              title: p.name,
+              price: p.priceDisplay,
+              billingInfo: p.billingInfo,
+              bonusAmount: '+${p.gemsBonus}',
+              bonusLabel: p.badgeText != null ? 'BONUS' : 'INCLUDED',
+              isSelected: isSelected,
+              gradient: _activeGradient,
+              badgeText: p.badgeText,
+              badgeGradient: _isVip ? _vipBadgeGradient : null,
+              onTap: () => setState(() {
+                if (p.period == 'weekly') {
+                  _plan = _Plan.weekly;
+                } else {
+                  _plan = _Plan.yearly;
+                }
+              }),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  // ── Fallback hardcoded cards (shown on API error) ──────────────────────────
+
+  Widget _buildVipCardsFallback() {
+    final plansAsync = ref.read(subscriptionPlansProvider);
+    final currency = plansAsync.valueOrNull
+        ?.firstOrNull
+        ?.priceDisplay
+        .replaceAll(RegExp(r'[\d\s,.]'), '')
+        .trim() ?? '';
+
+    String fmt(String amount) => currency.isNotEmpty ? '$amount $currency' : amount;
+
     return Column(
       key: const ValueKey('vip'),
       children: [
         _PlanCard(
           title: 'Yearly VIP',
-          price: '2 099,99 грн.',
-          billingInfo: '2 099,99 грн./year  ·  Billed yearly',
+          price: fmt('2 099,99'),
+          billingInfo: '${fmt('2 099,99')}/year  ·  Billed yearly',
           bonusAmount: '+3000',
           bonusLabel: 'BONUS',
           isSelected: _plan == _Plan.yearly,
@@ -345,8 +480,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
         const SizedBox(height: 12),
         _PlanCard(
           title: 'Weekly VIP',
-          price: '419,99 грн.',
-          billingInfo: '419,99 грн./week  ·  Billed weekly',
+          price: fmt('419,99'),
+          billingInfo: '${fmt('419,99')}/week  ·  Billed weekly',
           bonusAmount: '+400',
           bonusLabel: 'INCLUDED',
           isSelected: _plan == _Plan.weekly,
@@ -357,13 +492,22 @@ class _PaywallScreenState extends State<PaywallScreen> {
     );
   }
 
-  Widget _buildSvipCards() {
+  Widget _buildSvipCardsFallback() {
+    final plansAsync = ref.read(subscriptionPlansProvider);
+    final currency = plansAsync.valueOrNull
+        ?.firstOrNull
+        ?.priceDisplay
+        .replaceAll(RegExp(r'[\d\s,.]'), '')
+        .trim() ?? '';
+
+    String fmt(String amount) => currency.isNotEmpty ? '$amount $currency' : amount;
+
     return Column(
       key: const ValueKey('svip'),
       children: [
         _PlanCard(
           title: 'Lifetime SVIP',
-          price: '3 699,99 грн.',
+          price: fmt('3 699,99'),
           billingInfo: 'Pay once, enjoy forever',
           bonusAmount: '+6000',
           bonusLabel: 'BONUS',
@@ -375,8 +519,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
         const SizedBox(height: 12),
         _PlanCard(
           title: 'Weekly SVIP',
-          price: '529,99 грн.',
-          billingInfo: '529,99 грн./week  ·  Billed weekly',
+          price: fmt('529,99'),
+          billingInfo: '${fmt('529,99')}/week  ·  Billed weekly',
           bonusAmount: '+600',
           bonusLabel: 'INCLUDED',
           isSelected: _plan == _Plan.weekly,
@@ -429,8 +573,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
 
   Widget _buildCTAButton() {
+    final iapState = ref.watch(iapProvider);
+    final isLoading = iapState.isLoading;
+
     return GestureDetector(
-      onTap: () {},
+      onTap: isLoading ? null : _onPurchaseTap,
       child: Container(
         height: 52,
         decoration: BoxDecoration(
@@ -438,14 +585,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
           borderRadius: BorderRadius.circular(32),
         ),
         alignment: Alignment.center,
-        child: Text(
-          _buttonLabel,
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: _isVip ? Colors.white : Colors.black,
-          ),
-        ),
+        child: isLoading
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: _isVip ? Colors.white : Colors.black,
+                ),
+              )
+            : Text(
+                _buttonLabel,
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: _isVip ? Colors.white : Colors.black,
+                ),
+              ),
       ),
     );
   }
@@ -473,7 +629,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ),
         const Text('  •  ', style: sepStyle),
         GestureDetector(
-          onTap: () {},
+          onTap: () => ref.read(iapProvider.notifier).restorePurchases(),
           child: const Text('Restore', style: textStyle),
         ),
       ],

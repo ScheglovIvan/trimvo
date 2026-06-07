@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:trimvo/features/create/create_image_screen.dart';
 import 'package:trimvo/features/onboarding/onboarding_screen.dart';
+import 'package:trimvo/features/splash/splash_screen.dart';
 import 'package:trimvo/features/home/home_screen.dart';
 import 'package:trimvo/features/create/upload_screen.dart';
 import 'package:trimvo/features/create/template_upload_screen.dart';
@@ -23,6 +24,10 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(
       path: '/',
+      builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: '/onboarding',
       builder: (context, state) => const OnboardingScreen(),
     ),
     GoRoute(

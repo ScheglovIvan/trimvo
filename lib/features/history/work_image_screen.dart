@@ -42,15 +42,28 @@ class _WorkImageScreenState extends State<WorkImageScreen> {
     super.dispose();
   }
 
+  Future<String> _streamToFile(String url, String filePath) async {
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(url)));
+      final sink = File(filePath).openWrite();
+      await response.stream.pipe(sink);
+      await sink.flush();
+      await sink.close();
+      return filePath;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _share() async {
     final url = widget.imageUrls[_currentPage];
     if (url.isEmpty || _sharing) return;
     setState(() => _sharing = true);
     try {
-      final resp = await http.get(Uri.parse(url));
       final tmp = await getTemporaryDirectory();
       final path = '${tmp.path}/share_image_$_currentPage.jpg';
-      await File(path).writeAsBytes(resp.bodyBytes);
+      await _streamToFile(url, path);
       await Share.shareXFiles(
         [XFile(path)],
         text: 'Check out my Trimvo creation!',
@@ -71,18 +84,19 @@ class _WorkImageScreenState extends State<WorkImageScreen> {
     if (url.isEmpty || _saving) return;
     setState(() => _saving = true);
     try {
-      final resp = await http.get(Uri.parse(url));
-      final result = await SaverGallery.saveImage(
-        resp.bodyBytes,
-        quality: 100,
-        name: 'hypercut_${DateTime.now().millisecondsSinceEpoch}',
+      final tmp = await getTemporaryDirectory();
+      final fileName = 'trimvo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final filePath = '${tmp.path}/$fileName';
+      await _streamToFile(url, filePath);
+      final result = await SaverGallery.saveFile(
+        file: filePath,
+        name: fileName,
         androidRelativePath: 'Pictures/Trimvo',
         androidExistNotSave: false,
       );
-      final success = result.isSuccess;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(success ? 'Saved to gallery' : 'Could not save image')),
+          SnackBar(content: Text(result.isSuccess ? 'Saved to gallery' : 'Could not save image')),
         );
       }
     } catch (_) {

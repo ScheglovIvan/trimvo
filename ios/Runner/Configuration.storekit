@@ -1,0 +1,185 @@
+{
+  "identifier" : "TrimvoConfiguration",
+  "nonConsumableProducts" : [
+    {
+      "displayPrice" : "83.99",
+      "familySharable" : false,
+      "internalID" : "A1B2C3D4",
+      "localizations" : [
+        {
+          "description" : "Lifetime SVIP access — pay once, keep forever",
+          "displayName" : "Lifetime SVIP",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6777220690",
+      "referenceName" : "Lifetime SVIP",
+      "type" : "NonConsumable"
+    }
+  ],
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "14.99",
+      "familySharable" : false,
+      "internalID" : "E5F6A7B8",
+      "localizations" : [
+        {
+          "description" : "800 Gems",
+          "displayName" : "Starter",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6776737749",
+      "referenceName" : "Starter",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "34.99",
+      "familySharable" : false,
+      "internalID" : "C9D0E1F2",
+      "localizations" : [
+        {
+          "description" : "2300 Gems + 300 Bonus",
+          "displayName" : "2300 Gems",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6776739032",
+      "referenceName" : "2300 Gems",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "44.99",
+      "familySharable" : false,
+      "internalID" : "A3B4C5D6",
+      "localizations" : [
+        {
+          "description" : "3300 Gems + 500 Bonus",
+          "displayName" : "3300 Gems",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6776739486",
+      "referenceName" : "3300 Gems",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "79.99",
+      "familySharable" : false,
+      "internalID" : "E7F8A9B0",
+      "localizations" : [
+        {
+          "description" : "6000 Gems + 1000 Bonus",
+          "displayName" : "6000 Gems",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6776740590",
+      "referenceName" : "6000 Gems",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "118.99",
+      "familySharable" : false,
+      "internalID" : "C1D2E3F4",
+      "localizations" : [
+        {
+          "description" : "10000 Gems + 2000 Bonus",
+          "displayName" : "Most Popular — 10000 Gems",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "6776741957",
+      "referenceName" : "Most Popular",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "com.batteam.trimvo",
+    "_developerTeamID" : ""
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "VIP001",
+      "localizations" : [
+
+      ],
+      "name" : "VIP",
+      "subscriptions" : [
+        {
+          "adHocOfferCodeRedemption" : false,
+          "displayPrice" : "9.99",
+          "familySharable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A5B6C7D8",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Weekly VIP subscription — 400 bonus gems",
+              "displayName" : "Weekly VIP",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "6776744725",
+          "referenceName" : "Weekly VIP",
+          "recurringSubscriptionPeriod" : "P1W",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOfferCodeRedemption" : false,
+          "displayPrice" : "48.99",
+          "familySharable" : false,
+          "groupNumber" : 2,
+          "internalID" : "E9F0A1B2",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Yearly VIP subscription — 3000 bonus gems",
+              "displayName" : "Yearly VIP",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "6777221727",
+          "referenceName" : "Yearly VIP",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    },
+    {
+      "id" : "SVIP001",
+      "localizations" : [
+
+      ],
+      "name" : "SVIP",
+      "subscriptions" : [
+        {
+          "adHocOfferCodeRedemption" : false,
+          "displayPrice" : "11.99",
+          "familySharable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C3D4E5F6",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Weekly SVIP subscription — 600 bonus gems",
+              "displayName" : "Weekly SVIP",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "6777222376",
+          "referenceName" : "Weekly SVIP",
+          "recurringSubscriptionPeriod" : "P1W",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}

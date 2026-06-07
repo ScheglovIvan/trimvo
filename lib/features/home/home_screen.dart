@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:trimvo/core/theme/app_colors.dart';
 import 'package:trimvo/core/widgets/app_background.dart';
+import 'package:trimvo/features/home/svip_info_bottom_sheet.dart';
 import 'package:trimvo/features/profile/profile_bottom_sheet.dart';
+import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/models/category_model.dart';
 import 'package:trimvo/models/template_model.dart';
 import 'package:trimvo/providers/active_video_provider.dart';
@@ -41,11 +43,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _precacheTemplates(List<TemplateModel> templates) {
-    for (final t in templates) {
+    // Limit to the visible carousel cards; loading all at full-res can spike RAM.
+    for (final t in templates.take(6)) {
       if (t.thumbUrl != null && t.thumbUrl!.isNotEmpty) {
         CachedNetworkImageProvider(
           t.thumbUrl!,
           cacheManager: AppCacheManager(),
+          maxWidth: 360,
+          maxHeight: 640,
         ).resolve(ImageConfiguration.empty);
       }
     }
@@ -181,7 +186,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       GestureDetector(
-                        onTap: () => context.push('/paywall?svip=true'),
+                        onTap: () {
+                          final isSvip = ref.read(authProvider).isSvip;
+                          if (isSvip) {
+                            showSvipInfoBottomSheet(context);
+                          } else {
+                            context.push('/paywall?svip=true');
+                          }
+                        },
                         child: const SvipBadge(),
                       ),
                       Row(
@@ -420,6 +432,7 @@ class _FeaturedCarousel extends ConsumerStatefulWidget {
 
 class _FeaturedCarouselState extends ConsumerState<_FeaturedCarousel> {
   late final PageController _ctrl;
+  late final VoidCallback _pageListener;
   double _page = 0.0;
 
   int get _count => widget.templates?.length ?? 0;
@@ -432,14 +445,21 @@ class _FeaturedCarouselState extends ConsumerState<_FeaturedCarousel> {
       initialPage: _count * 500,
     );
     _page = _ctrl.initialPage.toDouble();
-    _ctrl.addListener(() {
-      if (mounted) setState(() => _page = _ctrl.page ?? _page);
-      ref.read(activeVideoProvider.notifier).state = 'featured';
-    });
+    _pageListener = () {
+      if (!mounted) return;
+      final newPage = _ctrl.page ?? _page;
+      if (newPage != _page) setState(() => _page = newPage);
+      // Only mutate provider when value actually changes — avoids 60fps rebuilds.
+      if (ref.read(activeVideoProvider) != 'featured') {
+        ref.read(activeVideoProvider.notifier).state = 'featured';
+      }
+    };
+    _ctrl.addListener(_pageListener);
   }
 
   @override
   void dispose() {
+    _ctrl.removeListener(_pageListener);
     _ctrl.dispose();
     super.dispose();
   }
@@ -483,6 +503,8 @@ class _FeaturedCarouselState extends ConsumerState<_FeaturedCarousel> {
                         imageUrl: thumbUrl,
                         cacheManager: AppCacheManager(),
                         fit: BoxFit.cover,
+                        memCacheWidth: 360,
+                        memCacheHeight: 640,
                         fadeInDuration: const Duration(milliseconds: 200),
                         placeholder: (_, __) => const ShimmerPlaceholder(),
                         errorWidget: (_, __, ___) =>
@@ -496,12 +518,16 @@ class _FeaturedCarouselState extends ConsumerState<_FeaturedCarousel> {
                       AnimatedOpacity(
                         opacity: 1.0,
                         duration: const Duration(milliseconds: 400),
-                        child: CachedNetworkImage(
-                          imageUrl: gifUrl,
-                          cacheManager: AppCacheManager(),
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) =>
-                              const SizedBox.shrink(),
+                        child: RepaintBoundary(
+                          child: CachedNetworkImage(
+                            imageUrl: gifUrl,
+                            cacheManager: AppCacheManager(),
+                            fit: BoxFit.cover,
+                            memCacheWidth: 360,
+                            memCacheHeight: 640,
+                            errorWidget: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
                         ),
                       ),
 
@@ -740,6 +766,7 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
     with WidgetsBindingObserver {
   final ScrollController _scrollCtrl = ScrollController();
   final Map<int, VideoPlayerController> _videoControllers = {};
+  final Set<int> _initializingIndices = {};
   int _firstVisibleIndex = 0;
 
   // item width = 200 * (9/16) = 112.5; spacing = 10
@@ -750,13 +777,6 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollCtrl.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.templates.isNotEmpty) {
-        final t = widget.templates[0];
-        final url = t.previewCompressedUrl ?? t.previewUrl;
-        if (url != null) _initAndPlayController(0, url);
-      }
-    });
   }
 
   @override
@@ -765,6 +785,7 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
       ctrl.dispose();
     }
     super.dispose();
@@ -782,21 +803,50 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
     }
   }
 
+  @override
+  void deactivate() {
+    // Pause + dispose all controllers when leaving — frees H.264 hardware decoder
+    // slots so the swipe screen (or any other screen) can use them without crashing.
+    for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
+      ctrl.dispose();
+    }
+    _videoControllers.clear();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // Re-init only the first visible item; videos are pre-cached so it's fast.
+    if (widget.templates.isNotEmpty && _firstVisibleIndex < widget.templates.length) {
+      final t = widget.templates[_firstVisibleIndex];
+      final url = t.previewCompressedUrl ?? t.previewUrl;
+      if (url != null) _initAndPlayController(_firstVisibleIndex, url);
+    }
+  }
+
   Future<void> _initAndPlayController(int index, String url) async {
     if (_videoControllers.containsKey(index)) return;
+    if (_initializingIndices.contains(index)) return;
+    _initializingIndices.add(index);
     final ctrl = await initCachedVideoController(url);
+    _initializingIndices.remove(index);
     if (ctrl == null) return;
-    if (mounted) {
+    if (mounted && _firstVisibleIndex == index) {
       setState(() => _videoControllers[index] = ctrl);
     } else {
+      ctrl.pause();
       ctrl.dispose();
     }
   }
 
   void _onScroll() {
     if (!mounted) return;
-    ref.read(activeVideoProvider.notifier).state =
-        'category_${widget.categoryName}';
+    final newKey = 'category_${widget.categoryName}';
+    if (ref.read(activeVideoProvider) != newKey) {
+      ref.read(activeVideoProvider.notifier).state = newKey;
+    }
     final newIndex = (_scrollCtrl.offset / _itemExtent)
         .floor()
         .clamp(0, widget.templates.length - 1);
@@ -809,14 +859,6 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
       final t = widget.templates[newIndex];
       final url = t.previewCompressedUrl ?? t.previewUrl;
       if (url != null) _initAndPlayController(newIndex, url);
-
-      // Lookahead: предзагрузить следующий
-      final nextIndex = newIndex + 1;
-      if (nextIndex < widget.templates.length) {
-        final next = widget.templates[nextIndex];
-        final nextUrl = next.previewCompressedUrl ?? next.previewUrl;
-        if (nextUrl != null) _initAndPlayController(nextIndex, nextUrl);
-      }
     }
   }
 
@@ -866,6 +908,8 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
                             cacheManager: AppCacheManager(),
                             fit: BoxFit.cover,
                             alignment: Alignment.topCenter,
+                            memCacheWidth: 340,
+                            memCacheHeight: 600,
                             fadeInDuration:
                                 const Duration(milliseconds: 200),
                             placeholder: (_, __) =>
@@ -888,6 +932,8 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
                                 cacheManager: AppCacheManager(),
                                 fit: BoxFit.cover,
                                 alignment: Alignment.topCenter,
+                                memCacheWidth: 340,
+                                memCacheHeight: 600,
                                 errorWidget: (_, __, ___) =>
                                     const SizedBox.shrink(),
                               ),

@@ -9,6 +9,7 @@ import 'package:trimvo/models/template_model.dart';
 import 'package:trimvo/providers/likes_provider.dart';
 import 'package:trimvo/providers/templates_provider.dart';
 import 'package:trimvo/shared/utils/video_utils.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:video_player/video_player.dart';
 
 class TemplateDetailScreen extends ConsumerStatefulWidget {
@@ -22,7 +23,7 @@ class TemplateDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   VideoPlayerController? _controller;
   bool _videoReady = false;
   bool _videoError = false;
@@ -34,6 +35,7 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _likeAnimCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -53,6 +55,7 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
   Future<void> _initVideo(String url) async {
     final ctrl = await initCachedVideoController(url, volume: 1.0);
     if (!mounted) {
+      ctrl?.pause();
       ctrl?.dispose();
       return;
     }
@@ -67,8 +70,32 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _controller?.pause();
+    } else if (state == AppLifecycleState.resumed) {
+      _controller?.play();
+    }
+  }
+
+  @override
+  void deactivate() {
+    _controller?.pause();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    if (_videoReady) _controller?.play();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _likeAnimCtrl.dispose();
+    _controller?.pause();
     _controller?.dispose();
     super.dispose();
   }
@@ -345,7 +372,10 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
       child: thumbUrl != null
           ? CachedNetworkImage(
               imageUrl: thumbUrl,
+              cacheManager: AppCacheManager(),
               fit: BoxFit.cover,
+              memCacheWidth: 720,
+              memCacheHeight: 1280,
               fadeInDuration: Duration.zero,
               fadeOutDuration: Duration.zero,
               placeholder: (_, __) => const ColoredBox(color: Colors.black),

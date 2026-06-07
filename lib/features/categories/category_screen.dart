@@ -32,6 +32,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen>
     with WidgetsBindingObserver {
   final ScrollController _gridScrollCtrl = ScrollController();
   final Map<int, VideoPlayerController> _videoControllers = {};
+  final Set<int> _initializingIndices = {};
   Set<int> _activeIndices = {0, 1};
 
   TemplatesParams get _params {
@@ -55,6 +56,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen>
     _gridScrollCtrl.removeListener(_onGridScroll);
     _gridScrollCtrl.dispose();
     for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
       ctrl.dispose();
     }
     super.dispose();
@@ -72,6 +74,31 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen>
         _videoControllers[i]?.play();
       }
     }
+  }
+
+  @override
+  void deactivate() {
+    for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
+      ctrl.dispose();
+    }
+    _videoControllers.clear();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    final async = ref.read(templatesProvider(_params));
+    async.whenData((templates) {
+      for (final i in _activeIndices) {
+        if (i < templates.length) {
+          final url =
+              templates[i].previewCompressedUrl ?? templates[i].previewUrl;
+          if (url != null) _initAndPlayController(i, url);
+        }
+      }
+    });
   }
 
   void _onGridScroll() {
@@ -94,9 +121,9 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen>
 
     for (final i in _activeIndices) {
       if (!newActive.contains(i)) {
-        _videoControllers[i]?.pause();
-        _videoControllers[i]?.dispose();
-        _videoControllers.remove(i);
+        final ctrl = _videoControllers.remove(i);
+        ctrl?.pause();
+        ctrl?.dispose();
       }
     }
 
@@ -105,13 +132,18 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen>
 
   Future<void> _initAndPlayController(int index, String url) async {
     if (_videoControllers.containsKey(index)) return;
+    if (_initializingIndices.contains(index)) return;
+    _initializingIndices.add(index);
     final ctrl = await initCachedVideoController(url);
+    _initializingIndices.remove(index);
     if (ctrl == null) return;
-    if (mounted) {
-      setState(() => _videoControllers[index] = ctrl);
-    } else {
+    // Re-check after await: widget may be gone or index may be scrolled away.
+    if (!mounted || !_activeIndices.contains(index)) {
+      ctrl.pause();
       ctrl.dispose();
+      return;
     }
+    setState(() => _videoControllers[index] = ctrl);
   }
 
   @override
@@ -293,6 +325,8 @@ class _VideoGridCardState extends State<_VideoGridCard> {
                 imageUrl: widget.template.thumbUrl!,
                 cacheManager: AppCacheManager(),
                 fit: BoxFit.cover,
+                memCacheWidth: 370,
+                memCacheHeight: 616,
                 placeholder: (_, __) =>
                     const ColoredBox(color: AppColors.backgroundCard),
                 errorWidget: (_, __, ___) =>
@@ -311,6 +345,8 @@ class _VideoGridCardState extends State<_VideoGridCard> {
                     imageUrl: widget.template.gifUrl!,
                     cacheManager: AppCacheManager(),
                     fit: BoxFit.cover,
+                    memCacheWidth: 370,
+                    memCacheHeight: 616,
                     alignment: Alignment.topCenter,
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),

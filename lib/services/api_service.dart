@@ -52,6 +52,16 @@ class ApiService {
     return _parse(response);
   }
 
+  /// Returns gems + full subscription info for the current user.
+  /// Endpoint: GET /v1/me/gems  (requires Bearer token)
+  static Future<Map<String, dynamic>> getGemsBalance() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/me/gems'),
+      headers: _headers,
+    );
+    return _parse(response);
+  }
+
   // ── Templates ───────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getTemplates({
@@ -80,11 +90,7 @@ class ApiService {
     final response = await http.get(uri, headers: _headers);
     debugPrint('getCategoryTemplates response: ${response.statusCode}');
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      throw ApiException(
-        body['detail']?.toString() ?? 'Request failed',
-        response.statusCode,
-      );
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
     final decoded = jsonDecode(response.body);
     if (decoded is List) {
@@ -110,9 +116,7 @@ class ApiService {
       body: jsonEncode({'template_id': templateId, 'reason': reason}),
     );
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['detail']?.toString() ?? body['message']?.toString() ?? 'Request failed';
-      throw ApiException(message, response.statusCode);
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
   }
 
@@ -124,9 +128,7 @@ class ApiService {
       headers: _headers,
     );
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['detail']?.toString() ?? 'Request failed';
-      throw ApiException(message, response.statusCode);
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
     final decoded = jsonDecode(response.body);
     if (decoded is List) return decoded.cast<Map<String, dynamic>>();
@@ -145,9 +147,7 @@ class ApiService {
       headers: _headers,
     );
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['detail']?.toString() ?? 'Request failed';
-      throw ApiException(message, response.statusCode);
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
     final decoded = jsonDecode(response.body);
     List<dynamic> items;
@@ -171,9 +171,7 @@ class ApiService {
       headers: _headers,
     );
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['detail']?.toString() ?? 'Request failed';
-      throw ApiException(message, response.statusCode);
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
     final decoded = jsonDecode(response.body);
     if (decoded is List) return decoded.cast<Map<String, dynamic>>();
@@ -200,15 +198,17 @@ class ApiService {
     String? templateId,
     Map<String, dynamic> options,
   ) async {
-    final body = <String, dynamic>{'options': options};
-    if (templateId != null && templateId.isNotEmpty) {
-      body['template_id'] = templateId;
+    if (templateId == null || templateId.isEmpty) {
+      throw const ApiException('template_id is required', 400);
     }
+    final body = <String, dynamic>{'options': options, 'template_id': templateId};
+    debugPrint('[createJob] POST $baseUrl/jobs body=${jsonEncode(body)}');
     final response = await http.post(
       Uri.parse('$baseUrl/jobs'),
       headers: _headers,
       body: jsonEncode(body),
     );
+    debugPrint('[createJob] ${response.statusCode} ${response.body}');
     return _parse(response);
   }
 
@@ -315,12 +315,20 @@ class ApiService {
 
   static Future<File> _fileForPathOrUrl(String pathOrUrl) async {
     if (!pathOrUrl.startsWith('http')) return File(pathOrUrl);
-    final resp = await http.get(Uri.parse(pathOrUrl));
-    final tmp = File(
-      '${Directory.systemTemp.path}/hc_${DateTime.now().millisecondsSinceEpoch}.jpg',
-    );
-    await tmp.writeAsBytes(resp.bodyBytes);
-    return tmp;
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(pathOrUrl)));
+      final tmp = File(
+        '${Directory.systemTemp.path}/hc_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      final sink = tmp.openWrite();
+      await response.stream.pipe(sink);
+      await sink.flush();
+      await sink.close();
+      return tmp;
+    } finally {
+      client.close();
+    }
   }
 
   static Future<Map<String, dynamic>> getJobStatus(String jobId) async {
@@ -331,13 +339,28 @@ class ApiService {
     return _parse(response);
   }
 
-  static Future<List<dynamic>> getUserJobs() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/jobs'),
+  static Future<Map<String, dynamic>> getUserJobs({
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final uri = Uri.parse('$baseUrl/jobs').replace(
+      queryParameters: {'page': '$page', 'per_page': '$perPage'},
+    );
+    final response = await http.get(uri, headers: _headers);
+    return _parse(response);
+  }
+
+  static Future<void> deleteAccount() async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/me/account'),
       headers: _headers,
     );
-    final data = _parse(response);
-    return data['items'] as List<dynamic>? ?? [];
+    if (response.statusCode >= 400) {
+      throw ApiException(
+        _safeErrorMessage(response, 'Failed to delete account'),
+        response.statusCode,
+      );
+    }
   }
 
   static Future<void> deleteJob(String jobId) async {
@@ -346,10 +369,58 @@ class ApiService {
       headers: _headers,
     );
     if (response.statusCode >= 400) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final message = body['detail'] ?? body['message'] ?? 'Delete failed';
-      throw ApiException(message.toString(), response.statusCode);
+      throw ApiException(_safeErrorMessage(response, 'Delete failed'), response.statusCode);
     }
+  }
+
+  // ── Apple IAP ───────────────────────────────────────────────────────────────
+
+  /// POST /v1/payments/apple/verify-purchase
+  static Future<Map<String, dynamic>> verifyApplePurchase({
+    required String jwsRepresentation,
+    required String packageId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/payments/apple/verify-purchase'),
+      headers: _headers,
+      body: jsonEncode({
+        'jws_representation': jwsRepresentation,
+        'package_id': packageId,
+      }),
+    );
+    return _parse(response);
+  }
+
+  /// POST /v1/payments/apple/verify-subscription
+  static Future<Map<String, dynamic>> verifyAppleSubscription({
+    required String jwsRepresentation,
+    required String planId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/payments/apple/verify-subscription'),
+      headers: _headers,
+      body: jsonEncode({
+        'jws_representation': jwsRepresentation,
+        'plan_id': planId,
+      }),
+    );
+    return _parse(response);
+  }
+
+  /// POST /v1/payments/apple/restore
+  static Future<Map<String, dynamic>> restoreApplePurchases({
+    required List<String> jwsRepresentations,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/payments/apple/restore'),
+      headers: _headers,
+      body: jsonEncode({
+        'transactions': jwsRepresentations
+            .map((jws) => {'jws_representation': jws})
+            .toList(),
+      }),
+    );
+    return _parse(response);
   }
 
   // ── Onboarding ──────────────────────────────────────────────────────────────
@@ -371,13 +442,21 @@ class ApiService {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  static Map<String, dynamic> _parse(http.Response response) {
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode >= 400) {
-      final message = body['detail'] ?? body['message'] ?? 'Request failed';
-      throw ApiException(message.toString(), response.statusCode);
+  static String _safeErrorMessage(http.Response response, [String fallback = 'Request failed']) {
+    try {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      return body['detail']?.toString() ?? body['message']?.toString() ?? fallback;
+    } catch (_) {
+      final text = response.body.trim();
+      return text.isNotEmpty && text.length < 300 ? text : fallback;
     }
-    return body;
+  }
+
+  static Map<String, dynamic> _parse(http.Response response) {
+    if (response.statusCode >= 400) {
+      throw ApiException(_safeErrorMessage(response), response.statusCode);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 }
 

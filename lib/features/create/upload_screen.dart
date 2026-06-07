@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,8 @@ import 'package:trimvo/features/auth/login_bottom_sheet.dart';
 import 'package:trimvo/features/create/photo_picker_sheet.dart';
 import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/providers/jobs_provider.dart';
+import 'package:trimvo/providers/pricing_provider.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:trimvo/shared/widgets/hint_video_sheet.dart';
 
 class UploadScreen extends ConsumerStatefulWidget {
@@ -44,8 +47,6 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     if (path != null && mounted) setState(() => onPicked(path));
   }
 
-  // Backend cost defaults: standard=300, high=600, premium=1200
-  static const _costs = {'Standard': 300, 'High': 600, 'Ultra HD': 1200};
 
   String get _apiQuality => switch (_quality) {
         'High' => 'high',
@@ -72,6 +73,25 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
       final loggedIn = await showLoginBottomSheet(context);
       if (!loggedIn || !mounted) return;
     }
+
+    // Check gem balance.
+    final pricing = ref.read(pricingProvider).valueOrNull ?? const PricingModel();
+    final cost = pricing.customVideoCost(
+      quality: _quality,
+      duration: _duration,
+      isSvip: ref.read(authProvider).isSvip,
+    );
+    final currentAuth = ref.read(authProvider);
+    if (currentAuth.gems < cost) {
+      if (!mounted) return;
+      if (!currentAuth.isSvip) {
+        context.push('/home/paywall?svip=true');
+      } else {
+        context.push('/home/gems');
+      }
+      return;
+    }
+
     setState(() => _isGenerating = true);
     try {
       final promptText = _promptController.text.trim().isEmpty
@@ -101,8 +121,12 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     final isSvip = ref.watch(authProvider).isSvip;
-    final baseCost = _costs[_quality] ?? 300;
-    final cost = isSvip ? (baseCost / 2).ceil() : baseCost;
+    final pricing = ref.watch(pricingProvider).valueOrNull ?? const PricingModel();
+    final cost = pricing.customVideoCost(
+      quality: _quality,
+      duration: _duration,
+      isSvip: isSvip,
+    );
 
     return AppBackground(
       child: Scaffold(
@@ -122,8 +146,9 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                  child:
-                      _tab == 0 ? _buildReferenceTab() : _buildStartEndTab(),
+                  child: _tab == 0
+                      ? _buildReferenceTab(pricing, isSvip)
+                      : _buildStartEndTab(pricing, isSvip),
                 ),
               ),
               _buildBottomSection(context, cost),
@@ -212,7 +237,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     );
   }
 
-  Widget _buildReferenceTab() {
+  Widget _buildReferenceTab(PricingModel pricing, bool isSvip) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -238,9 +263,9 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
         const SizedBox(height: 20),
         _buildPromptSection(),
         const SizedBox(height: 20),
-        _buildDurationSection(),
+        _buildDurationSection(pricing, isSvip),
         const SizedBox(height: 20),
-        _buildQualitySection(),
+        _buildQualitySection(pricing, isSvip),
         const SizedBox(height: 20),
         _buildOrientationSection(),
         const SizedBox(height: 24),
@@ -248,7 +273,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     );
   }
 
-  Widget _buildStartEndTab() {
+  Widget _buildStartEndTab(PricingModel pricing, bool isSvip) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -278,9 +303,9 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
         const SizedBox(height: 20),
         _buildPromptSection(),
         const SizedBox(height: 20),
-        _buildDurationSection(),
+        _buildDurationSection(pricing, isSvip),
         const SizedBox(height: 20),
-        _buildQualitySection(),
+        _buildQualitySection(pricing, isSvip),
         const SizedBox(height: 20),
         _buildOrientationSection(),
         const SizedBox(height: 24),
@@ -336,7 +361,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     );
   }
 
-  Widget _buildDurationSection() {
+  Widget _buildDurationSection(PricingModel pricing, bool isSvip) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -363,7 +388,14 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
               child: _ChoiceButton(
                 label: '10s',
                 isActive: _duration == '10s',
-                onTap: () => setState(() => _duration = '10s'),
+                locked: !isSvip,
+                onTap: () {
+                  if (!isSvip) {
+                    context.push('/home/paywall?svip=true');
+                    return;
+                  }
+                  setState(() => _duration = '10s');
+                },
                 svipBadge: true,
               ),
             ),
@@ -373,7 +405,7 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
     );
   }
 
-  Widget _buildQualitySection() {
+  Widget _buildQualitySection(PricingModel pricing, bool isSvip) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -410,7 +442,14 @@ class _UploadScreenState extends ConsumerState<UploadScreen> {
               child: _ChoiceButton(
                 label: 'Ultra HD',
                 isActive: _quality == 'Ultra HD',
-                onTap: () => setState(() => _quality = 'Ultra HD'),
+                locked: !isSvip,
+                onTap: () {
+                  if (!isSvip) {
+                    context.push('/home/paywall?svip=true');
+                    return;
+                  }
+                  setState(() => _quality = 'Ultra HD');
+                },
                 svipBadge: true,
                 fontSize: 12,
               ),
@@ -676,14 +715,18 @@ class _ImageSlot extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (imagePath != null)
+            if (imagePath != null) ...[
+              const ColoredBox(color: AppColors.backgroundCard),
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: imagePath!.startsWith('http')
-                    ? Image.network(
-                        imagePath!,
+                    ? CachedNetworkImage(
+                        imageUrl: imagePath!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
+                        cacheManager: AppCacheManager(),
+                        memCacheWidth: 480,
+                        memCacheHeight: 600,
+                        errorWidget: (_, __, ___) =>
                             const ColoredBox(color: AppColors.backgroundCard),
                       )
                     : Image.file(
@@ -692,7 +735,8 @@ class _ImageSlot extends StatelessWidget {
                         errorBuilder: (_, __, ___) =>
                             const ColoredBox(color: AppColors.backgroundCard),
                       ),
-              )
+              ),
+            ]
             else
               CustomPaint(
                 painter: _DashedBorderPainter(
@@ -918,6 +962,7 @@ class _ChoiceButton extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     this.svipBadge = false,
+    this.locked = false,
     this.fontSize = 14,
   });
 
@@ -925,6 +970,7 @@ class _ChoiceButton extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
   final bool svipBadge;
+  final bool locked;
   final double fontSize;
 
   @override
@@ -944,15 +990,26 @@ class _ChoiceButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(30),
             ),
             alignment: Alignment.center,
-            child: Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: fontSize,
-                fontWeight: FontWeight.bold,
-                color: isActive
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-              ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (locked)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(Icons.lock, size: 12, color: AppColors.textHint),
+                  ),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    color: isActive
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -26,15 +26,25 @@ class HistoryScreen extends ConsumerStatefulWidget {
 class _HistoryScreenState extends ConsumerState<HistoryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  int _activeTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    if (mounted && _tabController.index != _activeTabIndex) {
+      setState(() => _activeTabIndex = _tabController.index);
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -96,10 +106,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: const [
-                  _MyWorksTab(),
-                  _FavoritesTab(),
-                  _ComingSoonTab(icon: Icons.history_rounded),
+                children: [
+                  _MyWorksTab(isActive: _activeTabIndex == 0),
+                  _FavoritesTab(isActive: _activeTabIndex == 1),
+                  const _ComingSoonTab(icon: Icons.history_rounded),
                 ],
               ),
             ),
@@ -116,7 +126,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _MyWorksTab extends ConsumerStatefulWidget {
-  const _MyWorksTab();
+  const _MyWorksTab({required this.isActive});
+
+  final bool isActive;
 
   @override
   ConsumerState<_MyWorksTab> createState() => _MyWorksTabState();
@@ -127,6 +139,7 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
   bool _loading = true;
   final ScrollController _scrollCtrl = ScrollController();
   final Map<int, VideoPlayerController> _videoControllers = {};
+  final Set<int> _initializingIndices = {};
   Set<int> _activeIndices = {0, 1};
   List<JobModel> _sortedJobs = const [];
 
@@ -139,11 +152,22 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
   }
 
   @override
+  void didUpdateWidget(_MyWorksTab old) {
+    super.didUpdateWidget(old);
+    if (!widget.isActive && old.isActive) {
+      for (final ctrl in _videoControllers.values) { ctrl.pause(); }
+    } else if (widget.isActive && !old.isActive) {
+      for (final i in _activeIndices) { _videoControllers[i]?.play(); }
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
       ctrl.dispose();
     }
     super.dispose();
@@ -156,7 +180,7 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
       for (final ctrl in _videoControllers.values) {
         ctrl.pause();
       }
-    } else if (state == AppLifecycleState.resumed) {
+    } else if (state == AppLifecycleState.resumed && widget.isActive) {
       for (final i in _activeIndices) {
         _videoControllers[i]?.play();
       }
@@ -166,10 +190,22 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
   Future<void> _loadJobs() async {
     try {
       await ref.read(jobsProvider.notifier).getUserJobs();
-      // Refresh full details for done image jobs — list endpoint omits result_urls
       await ref.read(jobsProvider.notifier).fetchImageJobDetails();
     } catch (_) {}
-    if (mounted) setState(() => _loading = false);
+    if (!mounted) return;
+    setState(() => _loading = false);
+    final jobs = ref.read(jobsProvider).jobs;
+    for (final job in jobs.take(4)) {
+      final url = job.playbackUrl;
+      if (url != null && url.isNotEmpty && !job.isImageJob) prefetchVideo(url);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    await ref.read(jobsProvider.notifier).loadMoreJobs();
+    if (mounted) {
+      await ref.read(jobsProvider.notifier).fetchImageJobDetails();
+    }
   }
 
   void _onScroll() {
@@ -177,7 +213,6 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
     final offset = _scrollCtrl.offset;
     final size = MediaQuery.of(context).size;
     final cardW = (size.width - 44) / 2;
-    // Approximate row height using the average aspect ratio of loaded jobs
     final avgRatio = _sortedJobs.isEmpty
         ? 9 / 16
         : _sortedJobs.fold<double>(0, (s, j) => s + j.cardAspectRatio) /
@@ -193,27 +228,22 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
     }
     final newActive = {centerRow * 2, centerRow * 2 + 1};
 
-    if (newActive == _activeIndices) return;
-
-    for (final i in _activeIndices) {
-      if (!newActive.contains(i)) {
-        _videoControllers[i]?.pause();
-        _videoControllers[i]?.dispose();
-        _videoControllers.remove(i);
-      }
-    }
-
-    setState(() => _activeIndices = newActive);
-
-    // Lookahead: предзагрузить следующую строку (как в home screen)
-    final nextRow = centerRow + 1;
-    for (final i in [nextRow * 2, nextRow * 2 + 1]) {
-      if (i < _sortedJobs.length) {
-        final url = _sortedJobs[i].playbackUrl;
-        if (url != null && url.isNotEmpty) {
-          _initAndPlayController(i, url);
+    if (newActive != _activeIndices) {
+      for (final i in _activeIndices) {
+        if (!newActive.contains(i)) {
+          _videoControllers[i]?.pause();
+          _videoControllers[i]?.dispose();
+          _videoControllers.remove(i);
         }
       }
+      setState(() => _activeIndices = newActive);
+    }
+
+    // Load next page when within 400px of the bottom
+    final pos = _scrollCtrl.position;
+    if (pos.pixels > pos.maxScrollExtent - 400) {
+      final jobsState = ref.read(jobsProvider);
+      if (jobsState.hasMore && !jobsState.isLoadingMore) _loadMore();
     }
   }
 
@@ -271,13 +301,18 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
 
   Future<void> _initAndPlayController(int index, String url) async {
     if (_videoControllers.containsKey(index)) return;
+    if (_initializingIndices.contains(index)) return;
+    _initializingIndices.add(index);
     final ctrl = await initCachedVideoController(url);
+    _initializingIndices.remove(index);
     if (ctrl == null) return;
-    if (mounted) {
-      setState(() => _videoControllers[index] = ctrl);
-    } else {
+    // Re-check after await: widget may be gone or index may be scrolled away.
+    if (!mounted || !_activeIndices.contains(index)) {
+      ctrl.pause();
       ctrl.dispose();
+      return;
     }
+    setState(() => _videoControllers[index] = ctrl);
   }
 
   @override
@@ -318,31 +353,35 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
       );
     }
 
+    final jobsState = ref.watch(jobsProvider);
     final sorted = [...jobs]..sort((a, b) {
-        int order(JobModel j) {
+        int statusOrder(JobModel j) {
           if (j.status == 'processing') return 0;
           if (j.status == 'queued') return 1;
           return 2;
         }
-        return order(a).compareTo(order(b));
+        final statusCmp = statusOrder(a).compareTo(statusOrder(b));
+        if (statusCmp != 0) return statusCmp;
+        // Within the same group — newest first
+        final aDate = a.createdAt;
+        final bDate = b.createdAt;
+        if (aDate == null && bDate == null) return 0;
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return bDate.compareTo(aDate);
       });
 
-    // Синхронизируем кеш отсортированного списка для lookahead в _onScroll
+    // _sortedJobs is only read in _onScroll for height estimation — update directly,
+    // no setState needed since it doesn't affect the widget tree output.
     if (_sortedJobs.length != sorted.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _sortedJobs = sorted);
-      });
+      _sortedJobs = sorted;
     }
 
     if (_activeIndices.isEmpty && sorted.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final initialActive = {0, if (sorted.length > 1) 1};
-        setState(() {
-          _activeIndices = initialActive;
-          _sortedJobs = sorted;
-        });
-        // Preload строка 0 + lookahead строка 1 (как home screen)
+        _sortedJobs = sorted;
+        setState(() => _activeIndices = {0, if (sorted.length > 1) 1});
         for (var i = 0; i < sorted.length && i < 4; i++) {
           final url = sorted[i].playbackUrl;
           if (url != null && url.isNotEmpty) _initAndPlayController(i, url);
@@ -350,33 +389,54 @@ class _MyWorksTabState extends ConsumerState<_MyWorksTab>
       });
     }
 
-    return MasonryGridView.builder(
+    return CustomScrollView(
       controller: _scrollCtrl,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      gridDelegate: const SliverSimpleGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-      ),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      itemCount: sorted.length,
-      itemBuilder: (context, i) {
-        final job = sorted[i];
-        return AspectRatio(
-          aspectRatio: job.cardAspectRatio,
-          child: _JobCard(
-            job: job,
-            controller: _videoControllers[i],
-            isActive: _activeIndices.contains(i),
-            onActivate: () {
-              final url = job.playbackUrl;
-              if (url != null && url.isNotEmpty) {
-                _initAndPlayController(i, url);
-              }
-            },
-            onDelete: () => _confirmDelete(context, job.id),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          sliver: SliverMasonryGrid(
+            gridDelegate:
+                const SliverSimpleGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+            ),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            delegate: SliverChildBuilderDelegate(
+              (context, i) {
+                final job = sorted[i];
+                return AspectRatio(
+                  aspectRatio: job.cardAspectRatio,
+                  child: _JobCard(
+                    job: job,
+                    controller: _videoControllers[i],
+                    isActive: _activeIndices.contains(i),
+                    onActivate: () {
+                      final url = job.playbackUrl;
+                      if (url != null && url.isNotEmpty) {
+                        _initAndPlayController(i, url);
+                      }
+                    },
+                    onDelete: () => _confirmDelete(context, job.id),
+                  ),
+                );
+              },
+              childCount: sorted.length,
+            ),
           ),
-        );
-      },
+        ),
+        SliverToBoxAdapter(
+          child: jobsState.isLoadingMore
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.accentPurple,
+                    ),
+                  ),
+                )
+              : const SizedBox(height: 24),
+        ),
+      ],
     );
   }
 }
@@ -454,7 +514,8 @@ class _JobCardState extends State<_JobCard> {
               CachedNetworkImage(
                 imageUrl: job.primaryImageUrl!,
                 cacheManager: AppCacheManager(),
-                fit: BoxFit.contain,
+                fit: BoxFit.cover,
+                memCacheWidth: 350,
                 fadeInDuration: const Duration(milliseconds: 200),
                 placeholder: (_, __) =>
                     const ColoredBox(color: AppColors.backgroundCard),
@@ -466,6 +527,8 @@ class _JobCardState extends State<_JobCard> {
                 imageUrl: job.thumbUrl!,
                 cacheManager: AppCacheManager(),
                 fit: BoxFit.cover,
+                memCacheWidth: 350,
+                memCacheHeight: 630,
                 fadeInDuration: const Duration(milliseconds: 200),
                 placeholder: (_, __) =>
                     const ColoredBox(color: AppColors.backgroundCard),
@@ -715,7 +778,9 @@ class _ComingSoonTab extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FavoritesTab extends ConsumerStatefulWidget {
-  const _FavoritesTab();
+  const _FavoritesTab({required this.isActive});
+
+  final bool isActive;
 
   @override
   ConsumerState<_FavoritesTab> createState() => _FavoritesTabState();
@@ -725,7 +790,10 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
     with WidgetsBindingObserver {
   final ScrollController _scrollCtrl = ScrollController();
   final Map<String, VideoPlayerController> _videoControllers = {};
+  final Set<String> _initializingIds = {};
   Set<String> _activeIds = {};
+  int _visibleCount = 20;
+  bool _didInitActive = false;
 
   @override
   void initState() {
@@ -735,11 +803,22 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
   }
 
   @override
+  void didUpdateWidget(_FavoritesTab old) {
+    super.didUpdateWidget(old);
+    if (!widget.isActive && old.isActive) {
+      for (final ctrl in _videoControllers.values) { ctrl.pause(); }
+    } else if (widget.isActive && !old.isActive) {
+      for (final id in _activeIds) { _videoControllers[id]?.play(); }
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     for (final ctrl in _videoControllers.values) {
+      ctrl.pause();
       ctrl.dispose();
     }
     super.dispose();
@@ -752,7 +831,7 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
       for (final ctrl in _videoControllers.values) {
         ctrl.pause();
       }
-    } else if (state == AppLifecycleState.resumed) {
+    } else if (state == AppLifecycleState.resumed && widget.isActive) {
       for (final id in _activeIds) {
         _videoControllers[id]?.play();
       }
@@ -772,44 +851,58 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
     final offset = _scrollCtrl.offset;
     final size = MediaQuery.of(context).size;
     final cardW = (size.width - 44) / 2;
-    final cardH = cardW * (4 / 3) + 12;
+    final cardH = cardW * (16 / 9) + 12;
 
     final centerOffset = offset + size.height / 2;
     final centerRow = ((centerOffset - 16) / cardH).round().clamp(0, 999);
 
-    final likedIds = ref.read(likesProvider).toList();
+    final allIds = ref.read(likesProvider).toList();
+    final visibleIds = allIds.take(_visibleCount).toList();
+
     final newActiveIndices = [centerRow * 2, centerRow * 2 + 1]
-        .where((i) => i < likedIds.length)
+        .where((i) => i < visibleIds.length)
         .toList();
-    final newActiveIds = newActiveIndices.map((i) => likedIds[i]).toSet();
+    final newActiveIds = newActiveIndices.map((i) => visibleIds[i]).toSet();
 
-    if (newActiveIds == _activeIds) return;
-
-    for (final id in _activeIds) {
-      if (!newActiveIds.contains(id)) {
-        _videoControllers[id]?.pause();
-        _videoControllers[id]?.dispose();
-        _videoControllers.remove(id);
+    if (newActiveIds != _activeIds) {
+      for (final id in _activeIds) {
+        if (!newActiveIds.contains(id)) {
+          _videoControllers[id]?.pause();
+          _videoControllers[id]?.dispose();
+          _videoControllers.remove(id);
+        }
+      }
+      final oldActiveIds = Set<String>.from(_activeIds);
+      setState(() => _activeIds = newActiveIds);
+      for (final id in newActiveIds) {
+        if (!oldActiveIds.contains(id)) _activateId(id);
       }
     }
 
-    final oldActiveIds = Set<String>.from(_activeIds);
-    setState(() => _activeIds = newActiveIds);
-
-    for (final id in newActiveIds) {
-      if (!oldActiveIds.contains(id)) _activateId(id);
+    // Load more items when within 400px of the bottom
+    final pos = _scrollCtrl.position;
+    if (pos.pixels > pos.maxScrollExtent - 400 &&
+        _visibleCount < allIds.length) {
+      setState(() {
+        _visibleCount = (_visibleCount + 20).clamp(0, allIds.length);
+      });
     }
   }
 
   Future<void> _initVideo(String id, String url) async {
     if (_videoControllers.containsKey(id)) return;
+    if (_initializingIds.contains(id)) return;
+    _initializingIds.add(id);
     final ctrl = await initCachedVideoController(url);
+    _initializingIds.remove(id);
     if (ctrl == null) return;
-    if (mounted) {
-      setState(() => _videoControllers[id] = ctrl);
-    } else {
+    // Re-check after await: widget may be gone or id may be scrolled away.
+    if (!mounted || !_activeIds.contains(id)) {
+      ctrl.pause();
       ctrl.dispose();
+      return;
     }
+    setState(() => _videoControllers[id] = ctrl);
   }
 
   @override
@@ -845,12 +938,16 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
       );
     }
 
-    if (_activeIds.isEmpty && likedIds.isNotEmpty) {
+    final visibleIds = likedIds.take(_visibleCount).toList();
+    final hasMore = _visibleCount < likedIds.length;
+
+    if (!_didInitActive && _activeIds.isEmpty && visibleIds.isNotEmpty) {
+      _didInitActive = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           final initialIds = {
-            likedIds[0],
-            if (likedIds.length > 1) likedIds[1],
+            visibleIds[0],
+            if (visibleIds.length > 1) visibleIds[1],
           };
           setState(() => _activeIds = initialIds);
           for (final id in initialIds) {
@@ -864,23 +961,35 @@ class _FavoritesTabState extends ConsumerState<_FavoritesTab>
       controller: _scrollCtrl,
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 3 / 4,
+              childAspectRatio: 9 / 16,
             ),
             delegate: SliverChildBuilderDelegate(
               (context, i) => _FavoriteCard(
-                id: likedIds[i],
-                isActive: _activeIds.contains(likedIds[i]),
-                controller: _videoControllers[likedIds[i]],
+                id: visibleIds[i],
+                isActive: _activeIds.contains(visibleIds[i]),
+                controller: _videoControllers[visibleIds[i]],
               ),
-              childCount: likedIds.length,
+              childCount: visibleIds.length,
             ),
           ),
+        ),
+        SliverToBoxAdapter(
+          child: hasMore
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.accentPurple,
+                    ),
+                  ),
+                )
+              : const SizedBox(height: 24),
         ),
       ],
     );
@@ -939,6 +1048,8 @@ class _FavoriteCard extends ConsumerWidget {
                 cacheManager: AppCacheManager(),
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
+                memCacheWidth: 350,
+                memCacheHeight: 630,
                 placeholder: (_, __) =>
                     const ColoredBox(color: AppColors.backgroundCard),
                 errorWidget: (_, __, ___) =>
@@ -958,6 +1069,8 @@ class _FavoriteCard extends ConsumerWidget {
                     cacheManager: AppCacheManager(),
                     fit: BoxFit.cover,
                     alignment: Alignment.topCenter,
+                    memCacheWidth: 350,
+                    memCacheHeight: 630,
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),

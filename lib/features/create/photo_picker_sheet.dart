@@ -1,7 +1,9 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:trimvo/core/theme/app_colors.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 
 Future<String?> showPhotoPickerSheet(
   BuildContext context, {
@@ -190,13 +192,15 @@ class _PhotoPickerSheet extends StatelessWidget {
               onTap: () => Navigator.of(context).pop(_examples[i]),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  _examples[i],
+                child: CachedNetworkImage(
+                  imageUrl: _examples[i],
+                  cacheManager: AppCacheManager(),
                   fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) => progress == null
-                      ? child
-                      : const ColoredBox(color: AppColors.backgroundCard),
-                  errorBuilder: (_, __, ___) =>
+                  memCacheWidth: 200,
+                  memCacheHeight: 200,
+                  placeholder: (_, __) =>
+                      const ColoredBox(color: AppColors.backgroundCard),
+                  errorWidget: (_, __, ___) =>
                       const ColoredBox(color: AppColors.backgroundCard),
                 ),
               ),
@@ -242,10 +246,13 @@ class _ExampleGrid extends StatelessWidget {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                              url,
+                            child: CachedNetworkImage(
+                              imageUrl: url,
+                              cacheManager: AppCacheManager(),
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
+                              memCacheWidth: 150,
+                              memCacheHeight: 150,
+                              errorWidget: (_, __, ___) =>
                                   const ColoredBox(color: AppColors.backgroundCard),
                             ),
                           ),

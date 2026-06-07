@@ -8,7 +8,6 @@ class GemPackageModel {
     this.label,
     required this.isPopular,
     this.appleProductId,
-    this.googleProductId,
     required this.order,
   });
 
@@ -20,7 +19,6 @@ class GemPackageModel {
   final String? label;
   final bool isPopular;
   final String? appleProductId;
-  final String? googleProductId;
   final int order;
 
   factory GemPackageModel.fromJson(Map<String, dynamic> json) {
@@ -33,7 +31,6 @@ class GemPackageModel {
       label: json['label']?.toString(),
       isPopular: json['is_popular'] as bool? ?? false,
       appleProductId: json['apple_product_id']?.toString(),
-      googleProductId: json['google_product_id']?.toString(),
       order: (json['order'] as num?)?.toInt() ?? 0,
     );
   }

@@ -54,6 +54,8 @@ class TemplateCard extends StatelessWidget {
                     imageUrl: thumbnailUrl,
                     cacheManager: AppCacheManager(),
                     fit: BoxFit.cover,
+                    memCacheWidth: 480,
+                    memCacheHeight: 640,
                     fadeInDuration: const Duration(milliseconds: 200),
                     placeholder: (_, __) => const ShimmerPlaceholder(),
                     errorWidget: (_, __, ___) => const ColoredBox(

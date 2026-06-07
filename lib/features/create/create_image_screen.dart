@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,9 +10,9 @@ import 'package:trimvo/features/auth/login_bottom_sheet.dart';
 import 'package:trimvo/features/create/photo_picker_sheet.dart';
 import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/providers/jobs_provider.dart';
+import 'package:trimvo/providers/pricing_provider.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:trimvo/shared/widgets/hint_video_sheet.dart';
-
-const _kImageCost = 300;
 
 class CreateImageScreen extends ConsumerStatefulWidget {
   const CreateImageScreen({super.key});
@@ -82,7 +83,8 @@ class _CreateImageScreenState extends ConsumerState<CreateImageScreen> {
   @override
   Widget build(BuildContext context) {
     final isSvip = ref.watch(authProvider).isSvip;
-    final cost = isSvip ? (_kImageCost / 2).ceil() : _kImageCost;
+    final pricing = ref.watch(pricingProvider).valueOrNull ?? const PricingModel();
+    final cost = pricing.imageGenerationCost(isSvip: isSvip) * _numImages;
 
     return AppBackground(
       child: Scaffold(
@@ -193,21 +195,30 @@ class _CreateImageScreenState extends ConsumerState<CreateImageScreen> {
           child: AspectRatio(
             aspectRatio: 1,
             child: _imagePath != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: _imagePath!.startsWith('http')
-                        ? Image.network(
-                            _imagePath!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const ColoredBox(color: AppColors.backgroundCard),
-                          )
-                        : Image.file(
-                            File(_imagePath!),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const ColoredBox(color: AppColors.backgroundCard),
-                          ),
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const ColoredBox(color: AppColors.backgroundCard),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: _imagePath!.startsWith('http')
+                            ? CachedNetworkImage(
+                                imageUrl: _imagePath!,
+                                cacheManager: AppCacheManager(),
+                                fit: BoxFit.cover,
+                                memCacheWidth: 480,
+                                memCacheHeight: 480,
+                                errorWidget: (_, __, ___) =>
+                                    const ColoredBox(color: AppColors.backgroundCard),
+                              )
+                            : Image.file(
+                                File(_imagePath!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    const ColoredBox(color: AppColors.backgroundCard),
+                              ),
+                      ),
+                    ],
                   )
                 : CustomPaint(
                     painter: const _DashedBorderPainter(),

@@ -1,12 +1,16 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:trimvo/core/theme/app_colors.dart';
+import 'package:trimvo/shared/utils/video_utils.dart';
+import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:saver_gallery/saver_gallery.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
@@ -20,17 +24,30 @@ class ResultScreen extends StatefulWidget {
   State<ResultScreen> createState() => _ResultScreenState();
 }
 
-class _ResultScreenState extends State<ResultScreen> {
+class _ResultScreenState extends State<ResultScreen>
+    with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   bool _videoInitialized = false;
   bool _videoError = false;
   bool _isPlaying = false;
   bool _downloading = false;
+  bool _sharing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initVideo();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _controller?.pause();
+    } else if (state == AppLifecycleState.resumed && _isPlaying) {
+      _controller?.play();
+    }
   }
 
   Future<void> _initVideo() async {
@@ -45,16 +62,20 @@ class _ResultScreenState extends State<ResultScreen> {
     }
 
     try {
-      final ctrl = VideoPlayerController.networkUrl(Uri.parse(url));
-      await ctrl.initialize();
-      ctrl.setLooping(true);
-      await ctrl.play();
+      final ctrl = await initCachedVideoController(url);
+      if (ctrl == null) {
+        if (mounted) setState(() => _videoError = true);
+        return;
+      }
       if (mounted) {
         setState(() {
           _controller = ctrl;
           _videoInitialized = true;
           _isPlaying = true;
         });
+      } else {
+        ctrl.pause();
+        ctrl.dispose();
       }
     } catch (e) {
       if (mounted) setState(() => _videoError = true);
@@ -75,21 +96,40 @@ class _ResultScreenState extends State<ResultScreen> {
     });
   }
 
+  Future<void> _streamToFile(String url, String filePath) async {
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', Uri.parse(url)));
+      final sink = File(filePath).openWrite();
+      await response.stream.pipe(sink);
+      await sink.flush();
+      await sink.close();
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _downloadVideo() async {
     final url = widget.originalUrl ?? widget.resultUrl;
-    if (url == null) return;
+    if (url == null || _downloading) return;
 
     setState(() => _downloading = true);
     try {
-      final resp = await http.get(Uri.parse(url));
-      final dir = await getApplicationDocumentsDirectory();
-      final path =
-          '${dir.path}/trimvo_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      await File(path).writeAsBytes(resp.bodyBytes);
-
+      final tmp = await getTemporaryDirectory();
+      final fileName = 'trimvo_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final filePath = '${tmp.path}/$fileName';
+      await _streamToFile(url, filePath);
+      final result = await SaverGallery.saveFile(
+        file: filePath,
+        name: fileName,
+        androidRelativePath: 'Movies/Trimvo',
+        androidExistNotSave: false,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Video saved to device')),
+          SnackBar(
+            content: Text(result.isSuccess ? 'Saved to gallery' : 'Could not save video'),
+          ),
         );
       }
     } catch (e) {
@@ -105,13 +145,12 @@ class _ResultScreenState extends State<ResultScreen> {
 
   Future<void> _shareVideo() async {
     final url = widget.originalUrl ?? widget.resultUrl;
-    if (url == null) return;
-
+    if (url == null || _sharing) return;
+    setState(() => _sharing = true);
     try {
-      final resp = await http.get(Uri.parse(url));
       final tmp = await getTemporaryDirectory();
       final path = '${tmp.path}/share_video.mp4';
-      await File(path).writeAsBytes(resp.bodyBytes);
+      await _streamToFile(url, path);
       await Share.shareXFiles(
         [XFile(path)],
         text: 'Check out my Trimvo video!',
@@ -123,11 +162,15 @@ class _ResultScreenState extends State<ResultScreen> {
           const SnackBar(content: Text('Link copied to clipboard')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.pause();
     _controller?.dispose();
     super.dispose();
   }
@@ -151,13 +194,16 @@ class _ResultScreenState extends State<ResultScreen> {
               child: Icon(Icons.error_outline, color: Colors.white54, size: 64),
             )
           else if (_isImage)
-            Center(
-              child: Image.network(
-                widget.originalUrl ?? widget.resultUrl!,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Center(
-                  child:
-                      Icon(Icons.broken_image, color: Colors.white54, size: 64),
+            SizedBox.expand(
+              child: CachedNetworkImage(
+                imageUrl: widget.originalUrl ?? widget.resultUrl!,
+                fit: BoxFit.cover,
+                cacheManager: AppCacheManager(),
+                placeholder: (_, __) => const Center(
+                  child: CircularProgressIndicator(color: AppColors.accentPurple),
+                ),
+                errorWidget: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
                 ),
               ),
             )
@@ -188,10 +234,14 @@ class _ResultScreenState extends State<ResultScreen> {
             GestureDetector(
               onTap: _togglePlay,
               behavior: HitTestBehavior.opaque,
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: _controller!.value.aspectRatio,
-                  child: VideoPlayer(_controller!),
+              child: SizedBox.expand(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _controller!.value.size.width,
+                    height: _controller!.value.size.height,
+                    child: VideoPlayer(_controller!),
+                  ),
                 ),
               ),
             )

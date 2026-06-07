@@ -75,15 +75,11 @@ workflows:
     publishing:
       email:
         recipients:
-          - user_1@example.com
-          - user_2@example.com
+          - vektor9966@gmail.com
         notify:
           success: true
-          failure: false
-      app_store_connect: 
+          failure: true
+      app_store_connect:
         auth: integration
         submit_to_testflight: true
-        beta_groups:
-          - group name 1
-          - group name 2
         submit_to_app_store: false

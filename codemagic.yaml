@@ -61,7 +61,10 @@ workflows:
 
       - name: Build ipa for distribution
         script: |
-          flutter build ipa --release
+          flutter build ios --release --no-codesign
+          xcode-project build-ipa \
+            --workspace "$CM_BUILD_DIR/$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
 
     artifacts:
       - build/ios/ipa/*.ipa

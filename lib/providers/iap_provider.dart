@@ -77,6 +77,7 @@ class IapNotifier extends StateNotifier<IapState> {
     if (!Platform.isIOS) return;
 
     final productId = package.appleProductId;
+    debugPrint('[IAP] purchaseGemPackage: id=${package.id} appleProductId=$productId');
     if (productId == null || productId.isEmpty) {
       if (mounted) state = state.copyWith(error: 'This package is not available', isLoading: false);
       return;
@@ -90,9 +91,11 @@ class IapNotifier extends StateNotifier<IapState> {
         if (mounted) state = state.copyWith(error: 'App Store is not available', isLoading: false);
         return;
       }
+      debugPrint('[IAP] queryProductDetails: $productId');
       final response = await InAppPurchase.instance.queryProductDetails({productId});
+      debugPrint('[IAP] found=${response.productDetails.length} notFound=${response.notFoundIDs}');
       if (response.productDetails.isEmpty) {
-        if (mounted) state = state.copyWith(error: 'Product not found in App Store', isLoading: false);
+        if (mounted) state = state.copyWith(error: 'Product not found in App Store (id: $productId)', isLoading: false);
         return;
       }
       _productToGemPackageId[productId] = package.id;
@@ -108,6 +111,7 @@ class IapNotifier extends StateNotifier<IapState> {
     if (!Platform.isIOS) return;
 
     final productId = plan.appleProductId;
+    debugPrint('[IAP] purchaseSubscription: id=${plan.id} appleProductId=$productId');
     if (productId == null || productId.isEmpty) {
       if (mounted) state = state.copyWith(error: 'This plan is not available', isLoading: false);
       return;
@@ -121,9 +125,11 @@ class IapNotifier extends StateNotifier<IapState> {
         if (mounted) state = state.copyWith(error: 'App Store is not available', isLoading: false);
         return;
       }
+      debugPrint('[IAP] queryProductDetails: $productId');
       final response = await InAppPurchase.instance.queryProductDetails({productId});
+      debugPrint('[IAP] found=${response.productDetails.length} notFound=${response.notFoundIDs}');
       if (response.productDetails.isEmpty) {
-        if (mounted) state = state.copyWith(error: 'Product not found in App Store', isLoading: false);
+        if (mounted) state = state.copyWith(error: 'Product not found in App Store (id: $productId)', isLoading: false);
         return;
       }
       _productToSubPlanId[productId] = plan.id;

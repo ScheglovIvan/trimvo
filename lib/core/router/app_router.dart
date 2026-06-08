@@ -160,10 +160,11 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/work-video',
       builder: (context, state) {
-        final extra = state.extra as Map<String, String?>? ?? {};
+        final extra = state.extra as Map<String, dynamic>? ?? {};
         return WorkVideoScreen(
-          videoUrl: extra['videoUrl'] ?? '',
-          thumbUrl: extra['thumbUrl'],
+          videoUrl: extra['videoUrl']?.toString() ?? '',
+          thumbUrl: extra['thumbUrl']?.toString(),
+          fitCover: extra['fitCover'] == true,
         );
       },
     ),
@@ -178,8 +179,8 @@ final appRouter = GoRouter(
             [];
         return WorkImageScreen(
           imageUrls: urls,
-          initialIndex:
-              (extra['initialIndex'] as int?) ?? 0,
+          initialIndex: (extra['initialIndex'] as int?) ?? 0,
+          fitCover: extra['fitCover'] == true,
         );
       },
     ),

@@ -52,6 +52,20 @@ class _CreateImageScreenState extends ConsumerState<CreateImageScreen> {
       final loggedIn = await showLoginBottomSheet(context);
       if (!loggedIn || !mounted) return;
     }
+
+    final pricing = ref.read(pricingProvider).valueOrNull ?? const PricingModel();
+    final cost = pricing.imageGenerationCost(isSvip: ref.read(authProvider).isSvip) * _numImages;
+    final currentAuth = ref.read(authProvider);
+    if (currentAuth.gems < cost) {
+      if (!mounted) return;
+      if (!currentAuth.isSvip) {
+        context.push('/home/paywall?svip=true');
+      } else {
+        context.push('/home/gems');
+      }
+      return;
+    }
+
     setState(() => _isGenerating = true);
     try {
       final jobId = await ref.read(jobsProvider.notifier).createImageJob(

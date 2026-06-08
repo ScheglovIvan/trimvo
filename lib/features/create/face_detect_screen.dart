@@ -27,15 +27,6 @@ class FaceDetectScreen extends StatefulWidget {
 class _FaceDetectScreenState extends State<FaceDetectScreen> {
   bool _faceSelected = true;
 
-  Rect _simulateFaceRect(Size widgetSize) {
-    final faceSize = widgetSize.width * 0.25;
-    return Rect.fromCenter(
-      center: Offset(widgetSize.width / 2, widgetSize.height * 0.28),
-      width: faceSize,
-      height: faceSize * 1.1,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
@@ -99,29 +90,15 @@ class _FaceDetectScreenState extends State<FaceDetectScreen> {
                   borderRadius: BorderRadius.circular(16),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
-                      final size =
-                          Size(constraints.maxWidth, constraints.maxHeight);
-                      final faceRect = _simulateFaceRect(size);
                       return GestureDetector(
                         onTap: () =>
                             setState(() => _faceSelected = !_faceSelected),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.file(
-                              File(widget.imagePath),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const ColoredBox(
-                                color: AppColors.backgroundCard,
-                              ),
-                            ),
-                            CustomPaint(
-                              painter: _FaceRectPainter(
-                                rect: faceRect,
-                                selected: _faceSelected,
-                              ),
-                            ),
-                          ],
+                        child: Image.file(
+                          File(widget.imagePath),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const ColoredBox(
+                            color: AppColors.backgroundCard,
+                          ),
                         ),
                       );
                     },
@@ -247,49 +224,3 @@ class _FaceThumbnail extends StatelessWidget {
   }
 }
 
-class _FaceRectPainter extends CustomPainter {
-  const _FaceRectPainter({required this.rect, required this.selected});
-
-  final Rect rect;
-  final bool selected;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (!selected) return;
-
-    final paint = Paint()
-      ..color = AppColors.accentPurple
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-
-    canvas.drawRect(rect, paint);
-
-    // Corner decorations
-    const cornerLen = 12.0;
-    final corners = [
-      [rect.topLeft, Offset(rect.left + cornerLen, rect.top),
-       Offset(rect.left, rect.top + cornerLen)],
-      [rect.topRight, Offset(rect.right - cornerLen, rect.top),
-       Offset(rect.right, rect.top + cornerLen)],
-      [rect.bottomLeft, Offset(rect.left + cornerLen, rect.bottom),
-       Offset(rect.left, rect.bottom - cornerLen)],
-      [rect.bottomRight, Offset(rect.right - cornerLen, rect.bottom),
-       Offset(rect.right, rect.bottom - cornerLen)],
-    ];
-
-    final cornerPaint = Paint()
-      ..color = AppColors.accentPurpleLight
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-
-    for (final c in corners) {
-      canvas.drawLine(c[0], c[1], cornerPaint);
-      canvas.drawLine(c[0], c[2], cornerPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _FaceRectPainter old) =>
-      old.rect != rect || old.selected != selected;
-}

@@ -14,10 +14,12 @@ class WorkImageScreen extends StatefulWidget {
     super.key,
     required this.imageUrls,
     this.initialIndex = 0,
+    this.fitCover = false,
   });
 
   final List<String> imageUrls;
   final int initialIndex;
+  final bool fitCover;
 
   @override
   State<WorkImageScreen> createState() => _WorkImageScreenState();
@@ -136,7 +138,7 @@ class _WorkImageScreenState extends State<WorkImageScreen> {
                 child: CachedNetworkImage(
                   imageUrl: widget.imageUrls[i],
                   cacheManager: AppCacheManager(),
-                  fit: BoxFit.contain,
+                  fit: widget.fitCover ? BoxFit.cover : BoxFit.contain,
                   fadeInDuration: const Duration(milliseconds: 200),
                   placeholder: (_, __) =>
                       const ColoredBox(color: Colors.black),
@@ -178,8 +180,11 @@ class _WorkImageScreenState extends State<WorkImageScreen> {
                               color: Colors.black38,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.arrow_back,
-                                color: Colors.white, size: 20),
+                            child: Icon(
+                          Platform.isIOS ? Icons.arrow_back_ios_new : Icons.arrow_back,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                           ),
                         ),
 

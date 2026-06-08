@@ -62,9 +62,9 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
     if (ctrl == null) {
       setState(() => _videoError = true);
     } else {
-      setState(() {
-        _controller = ctrl;
-        _videoReady = true;
+      setState(() => _controller = ctrl);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _videoReady = true);
       });
     }
   }
@@ -144,33 +144,37 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background: thumb always, video on top when ready
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          layoutBuilder: (current, previous) => Stack(
-            fit: StackFit.expand,
-            children: [
-              ...previous,
-              if (current != null) current,
-            ],
-          ),
-          child: _videoReady && _controller != null
-              ? SizedBox.expand(
-                  key: const ValueKey('video'),
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _controller!.value.size.width,
-                      height: _controller!.value.size.height,
-                      child: VideoPlayer(_controller!),
-                    ),
-                  ),
-                )
-              : KeyedSubtree(
-                  key: const ValueKey('thumb'),
-                  child: _buildThumbLayer(thumbUrl),
+        // Layer 1: thumbnail always visible while video streams in.
+        if (thumbUrl != null)
+          CachedNetworkImage(
+            imageUrl: thumbUrl,
+            cacheManager: AppCacheManager(),
+            fit: BoxFit.cover,
+            memCacheWidth: 720,
+            memCacheHeight: 1280,
+            fadeInDuration: Duration.zero,
+            placeholder: (_, __) => const ColoredBox(color: Colors.black),
+            errorWidget: (_, __, ___) => const ColoredBox(color: Colors.black),
+          )
+        else
+          const ColoredBox(color: Colors.black),
+
+        // Layer 2: video fades in over thumbnail via AnimatedOpacity.
+        if (_controller != null)
+          AnimatedOpacity(
+            opacity: _videoReady ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 400),
+            child: SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller!.value.size.width,
+                  height: _controller!.value.size.height,
+                  child: VideoPlayer(_controller!),
                 ),
-        ),
+              ),
+            ),
+          ),
 
         // Bottom gradient
         const Positioned(
@@ -367,22 +371,4 @@ class _TemplateDetailScreenState extends ConsumerState<TemplateDetailScreen>
     return '$likes';
   }
 
-  Widget _buildThumbLayer(String? thumbUrl) {
-    return SizedBox.expand(
-      child: thumbUrl != null
-          ? CachedNetworkImage(
-              imageUrl: thumbUrl,
-              cacheManager: AppCacheManager(),
-              fit: BoxFit.cover,
-              memCacheWidth: 720,
-              memCacheHeight: 1280,
-              fadeInDuration: Duration.zero,
-              fadeOutDuration: Duration.zero,
-              placeholder: (_, __) => const ColoredBox(color: Colors.black),
-              errorWidget: (_, __, ___) =>
-                  const ColoredBox(color: Colors.black),
-            )
-          : const ColoredBox(color: Colors.black),
-    );
-  }
 }

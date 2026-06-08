@@ -190,10 +190,21 @@ class JobsNotifier extends StateNotifier<JobsState> {
   }
 
   Future<void> deleteJob(String jobId) async {
-    await ApiService.deleteJob(jobId);
+    final removed = state.jobs.firstWhere(
+      (j) => j.id == jobId,
+      orElse: () => state.jobs.first,
+    );
+    // Optimistic: remove immediately so UI feels instant
     state = state.copyWith(
       jobs: state.jobs.where((j) => j.id != jobId).toList(),
     );
+    try {
+      await ApiService.deleteJob(jobId);
+    } catch (_) {
+      // Restore on failure
+      state = state.copyWith(jobs: [...state.jobs, removed]);
+      rethrow;
+    }
   }
 
   void _updateJob(JobModel updated) {

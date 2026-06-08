@@ -16,10 +16,12 @@ class WorkVideoScreen extends StatefulWidget {
     super.key,
     required this.videoUrl,
     this.thumbUrl,
+    this.fitCover = false,
   });
 
   final String videoUrl;
   final String? thumbUrl;
+  final bool fitCover;
 
   @override
   State<WorkVideoScreen> createState() => _WorkVideoScreenState();
@@ -76,8 +78,13 @@ class _WorkVideoScreenState extends State<WorkVideoScreen>
       await ctrl.setLooping(true);
       await ctrl.setVolume(1.0);
       if (!mounted) { ctrl.dispose(); return; }
-      setState(() { _controller = ctrl; _videoReady = true; });
       ctrl.play();
+      // Add video widget to the tree first (opacity 0), then trigger fade-in
+      // on the next frame so AnimatedOpacity actually animates.
+      setState(() => _controller = ctrl);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _videoReady = true);
+      });
     } catch (_) {
       if (mounted) setState(() => _videoError = true);
     }
@@ -167,32 +174,39 @@ class _WorkVideoScreenState extends State<WorkVideoScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Full-screen media layer
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            layoutBuilder: (current, previous) => Stack(
-              fit: StackFit.expand,
-              children: [...previous, if (current != null) current],
-            ),
-            child: _videoReady && _controller != null
-                ? SizedBox.expand(
-                    key: const ValueKey('video'),
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: SizedBox(
-                        width: _controller!.value.size.width,
-                        height: _controller!.value.size.height,
-                        child: VideoPlayer(_controller!),
-                      ),
-                    ),
-                  )
-                : KeyedSubtree(
-                    key: const ValueKey('thumb'),
-                    child: _buildThumb(),
-                  ),
-          ),
+          // Layer 1: thumbnail — always visible, streams video over it.
+          if (widget.thumbUrl != null)
+            CachedNetworkImage(
+              imageUrl: widget.thumbUrl!,
+              cacheManager: AppCacheManager(),
+              fit: widget.fitCover ? BoxFit.cover : BoxFit.contain,
+              memCacheWidth: 720,
+              memCacheHeight: 1280,
+              fadeInDuration: Duration.zero,
+              placeholder: (_, __) => const ColoredBox(color: Colors.black),
+              errorWidget: (_, __, ___) => const ColoredBox(color: Colors.black),
+            )
+          else
+            const ColoredBox(color: Colors.black),
 
-          // Loading indicator
+          // Layer 2: video — streams via networkUrl, fades in over thumbnail.
+          if (_controller != null)
+            AnimatedOpacity(
+              opacity: _videoReady ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 400),
+              child: SizedBox.expand(
+                child: FittedBox(
+                  fit: widget.fitCover ? BoxFit.cover : BoxFit.contain,
+                  child: SizedBox(
+                    width: _controller!.value.size.width,
+                    height: _controller!.value.size.height,
+                    child: VideoPlayer(_controller!),
+                  ),
+                ),
+              ),
+            ),
+
+          // Loading indicator (while video initialises)
           if (!_videoReady && !_videoError)
             const Center(
               child: CircularProgressIndicator(color: AppColors.accentPurple),
@@ -258,8 +272,8 @@ class _WorkVideoScreenState extends State<WorkVideoScreen>
                           color: Colors.black38,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.arrow_back,
+                        child: Icon(
+                          Platform.isIOS ? Icons.arrow_back_ios_new : Icons.arrow_back,
                           color: AppColors.textPrimary,
                           size: 20,
                         ),
@@ -349,22 +363,4 @@ class _WorkVideoScreenState extends State<WorkVideoScreen>
     );
   }
 
-  Widget _buildThumb() {
-    final url = widget.thumbUrl;
-    return SizedBox.expand(
-      child: url != null
-          ? CachedNetworkImage(
-              imageUrl: url,
-              cacheManager: AppCacheManager(),
-              fit: BoxFit.contain,
-              memCacheWidth: 720,
-              memCacheHeight: 1280,
-              fadeInDuration: Duration.zero,
-              fadeOutDuration: Duration.zero,
-              placeholder: (_, __) => const ColoredBox(color: Colors.black),
-              errorWidget: (_, __, ___) => const ColoredBox(color: Colors.black),
-            )
-          : const ColoredBox(color: Colors.black),
-    );
-  }
 }

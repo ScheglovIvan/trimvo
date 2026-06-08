@@ -45,7 +45,7 @@ class SubscriptionPlanModel {
         j['billing_description']?.toString() ??
         (period == 'lifetime' ? 'Pay once, enjoy forever' : '$priceDisplay · Billed $period');
 
-    final gems = (j['gems_bonus'] ?? j['gems_included'] ?? j['gems'] ?? 0) as num;
+    final gems = (j['bonus_gems'] ?? j['gems_bonus'] ?? j['bonus'] ?? j['gems_included'] ?? j['gems'] ?? 0) as num;
     final badge = j['badge']?.toString() ?? j['label']?.toString() ?? j['badge_text']?.toString();
     final popular = j['is_popular'] == true || j['popular'] == true;
 

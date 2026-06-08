@@ -9,6 +9,7 @@ import 'package:trimvo/core/widgets/app_background.dart';
 import 'package:trimvo/models/job_model.dart';
 import 'package:trimvo/models/template_model.dart';
 import 'package:trimvo/providers/jobs_provider.dart';
+import 'package:trimvo/services/api_service.dart';
 import 'package:trimvo/providers/likes_provider.dart';
 import 'package:trimvo/providers/templates_provider.dart';
 import 'package:trimvo/shared/utils/video_utils.dart';
@@ -461,6 +462,44 @@ class _JobCard extends StatefulWidget {
 }
 
 class _JobCardState extends State<_JobCard> {
+  bool _opening = false;
+
+  Future<void> _openImageJob(BuildContext context) async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    try {
+      final fresh = await ApiService.getJobStatus(widget.job.id);
+      final freshJob = JobModel.fromJson(fresh);
+      final urls = freshJob.imageUrls.isNotEmpty
+          ? freshJob.imageUrls
+          : (freshJob.resultUrl != null ? [freshJob.resultUrl!] : <String>[]);
+      if (urls.isEmpty) return;
+      if (context.mounted) {
+        final ar = freshJob.aspectRatio ?? widget.job.aspectRatio;
+        context.push('/work-image', extra: <String, dynamic>{
+          'imageUrls': urls,
+          'initialIndex': 0,
+          'fitCover': ar == '3:4' || ar == '9:16',
+        });
+      }
+    } catch (_) {
+      // fallback: use cached URLs even if expired
+      final urls = widget.job.imageUrls.isNotEmpty
+          ? widget.job.imageUrls
+          : (widget.job.resultUrl != null ? [widget.job.resultUrl!] : <String>[]);
+      if (urls.isNotEmpty && context.mounted) {
+        final ar = widget.job.aspectRatio;
+        context.push('/work-image', extra: <String, dynamic>{
+          'imageUrls': urls,
+          'initialIndex': 0,
+          'fitCover': ar == '3:4' || ar == '9:16',
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -486,17 +525,12 @@ class _JobCardState extends State<_JobCard> {
       onTap: job.isDone
           ? () {
               if (isImage) {
-                final urls = job.imageUrls.isNotEmpty
-                    ? job.imageUrls
-                    : (job.resultUrl != null ? [job.resultUrl!] : <String>[]);
-                context.push('/work-image', extra: <String, dynamic>{
-                  'imageUrls': urls,
-                  'initialIndex': 0,
-                });
+                _openImageJob(context);
               } else {
-                context.push('/work-video', extra: <String, String?>{
+                context.push('/work-video', extra: <String, dynamic>{
                   'videoUrl': job.fullUrl ?? job.resultUrl ?? '',
                   'thumbUrl': job.thumbUrl,
+                  'fitCover': job.jobType == 'template',
                 });
               }
             }
@@ -519,8 +553,15 @@ class _JobCardState extends State<_JobCard> {
                 fadeInDuration: const Duration(milliseconds: 200),
                 placeholder: (_, __) =>
                     const ColoredBox(color: AppColors.backgroundCard),
-                errorWidget: (_, __, ___) =>
-                    const ColoredBox(color: AppColors.backgroundCard),
+                errorWidget: (_, __, ___) => const Center(
+                  child: Icon(Icons.image_outlined,
+                      color: AppColors.textHint, size: 40),
+                ),
+              )
+            else if (isImage)
+              const Center(
+                child: Icon(Icons.image_outlined,
+                    color: AppColors.textHint, size: 40),
               )
             else if (job.thumbUrl != null)
               CachedNetworkImage(
@@ -686,6 +727,22 @@ class _JobCardState extends State<_JobCard> {
                 ),
               ),
             ),
+
+            // Loading overlay while fetching fresh image URL
+            if (_opening)
+              const ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

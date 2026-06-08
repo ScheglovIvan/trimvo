@@ -834,6 +834,10 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
     _initializingIndices.remove(index);
     if (ctrl == null) return;
     if (mounted && _firstVisibleIndex == index) {
+      // Only play if this row is still the active one — avoids multiple
+      // category rows decoding simultaneously and tanking the frame rate.
+      final isActive = ref.read(activeVideoProvider) == 'category_${widget.categoryName}';
+      if (!isActive) ctrl.pause();
       setState(() => _videoControllers[index] = ctrl);
     } else {
       ctrl.pause();
@@ -870,6 +874,19 @@ class _CategoryRowApiState extends ConsumerState<_CategoryRowApi>
   @override
   Widget build(BuildContext context) {
     final activeKey = ref.watch(activeVideoProvider);
+
+    // Pause this row's video when another row becomes active, resume when it
+    // becomes active again. This prevents multiple rows decoding simultaneously.
+    ref.listen<String?>(activeVideoProvider, (prev, next) {
+      final myKey = 'category_${widget.categoryName}';
+      if (next == myKey) {
+        _videoControllers[_firstVisibleIndex]?.play();
+      } else if (prev == myKey) {
+        for (final ctrl in _videoControllers.values) {
+          ctrl.pause();
+        }
+      }
+    });
 
     return SizedBox(
       height: 200,

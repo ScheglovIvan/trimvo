@@ -90,6 +90,23 @@ class _TemplateUploadScreenState extends ConsumerState<TemplateUploadScreen> {
       return;
     }
 
+    final currentAuth = ref.read(authProvider);
+    final cost = pricing.calculate(
+      templateBaseCost: template.gemsCost,
+      duration: '5s',
+      quality: 'standard',
+      isSvip: currentAuth.isSvip,
+    );
+    if (currentAuth.gems < cost) {
+      if (!context.mounted) return;
+      if (!currentAuth.isSvip) {
+        context.push('/home/paywall?svip=true');
+      } else {
+        context.push('/home/gems');
+      }
+      return;
+    }
+
     setState(() => _isGenerating = true);
     try {
       String? photoUrl1 = _photo1;

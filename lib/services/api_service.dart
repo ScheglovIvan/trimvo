@@ -146,6 +146,7 @@ class ApiService {
       Uri.parse('$baseUrl/gem-packages'),
       headers: _headers,
     );
+    debugPrint('[GemPackages] status=${response.statusCode} body=${response.body.substring(0, response.body.length.clamp(0, 500))}');
     if (response.statusCode >= 400) {
       throw ApiException(_safeErrorMessage(response), response.statusCode);
     }
@@ -158,9 +159,13 @@ class ApiService {
     } else {
       items = [];
     }
-    return items
+    final packages = items
         .map((e) => GemPackageModel.fromJson(e as Map<String, dynamic>))
         .toList();
+    for (final p in packages) {
+      debugPrint('[GemPackages] id=${p.id} gems=${p.gemsAmount} appleProductId=${p.appleProductId}');
+    }
+    return packages;
   }
 
   // ── Subscription Plans ──────────────────────────────────────────────────────

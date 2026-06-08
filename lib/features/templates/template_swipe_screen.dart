@@ -8,7 +8,6 @@ import 'package:trimvo/features/templates/report_bottom_sheet.dart';
 import 'package:trimvo/models/template_model.dart';
 import 'package:trimvo/providers/likes_provider.dart';
 import 'package:trimvo/providers/templates_provider.dart';
-import 'dart:io';
 import 'package:trimvo/shared/utils/video_utils.dart';
 import 'package:trimvo/shared/widgets/app_cache_manager.dart';
 import 'package:video_player/video_player.dart';
@@ -132,26 +131,6 @@ class _TemplateSwipeScreenState extends ConsumerState<TemplateSwipeScreen>
     _queueRunning = false;
   }
 
-  // Check file cache only — no network. Returns an initialized controller or null.
-  Future<VideoPlayerController?> _fromFileCache(String url) async {
-    try {
-      final cached = await VideoCacheManager().getFileFromCache(url);
-      if (cached == null) return null;
-      final file = File(cached.file.path);
-      if (!await file.exists()) return null;
-      final ctrl = VideoPlayerController.file(
-        file,
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      );
-      await ctrl.initialize();
-      await ctrl.setLooping(true);
-      await ctrl.setVolume(0);
-      return ctrl;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _initVideo(
       int index, String primaryUrl, String? fallbackUrl) async {
     if (_videoControllers.containsKey(index)) return;
@@ -159,47 +138,13 @@ class _TemplateSwipeScreenState extends ConsumerState<TemplateSwipeScreen>
     _initializingIndices.add(index);
     debugPrint('[SwipeVideo] init idx=$index');
 
-    // ── Stage 1: instant fast-path ────────────────────────────────────────────
-    // If the compressed URL is already in the file cache (put there by the home
-    // screen), show it right away so the user sees a video immediately instead
-    // of a GIF/thumbnail placeholder.
-    if (fallbackUrl != null) {
-      final fast = await _fromFileCache(fallbackUrl);
-      if (fast != null) {
-        final keep = {_currentIndex - 1, _currentIndex, _currentIndex + 1};
-        if (!keep.contains(index) || !mounted) {
-          fast.pause();
-          fast.dispose();
-        } else {
-          if (index == _currentIndex) {
-            await fast.play();
-          } else {
-            fast.pause();
-          }
-          if (mounted) {
-            setState(() => _videoControllers[index] = fast);
-            debugPrint('[SwipeVideo] fast-path shown (compressed from cache) idx=$index');
-          } else {
-            fast.dispose();
-          }
-        }
-      }
-    }
-
-    // ── Stage 2: original quality ─────────────────────────────────────────────
-    // Load the primary (high-quality) URL. When ready, replace stage-1 ctrl.
+    // Load original quality directly — no compressed fast-path so there's no
+    // quality jump or "restart from 0" glitch when the original replaces it.
     final orig = await initCachedVideoController(primaryUrl, volume: 0);
-
     _initializingIndices.remove(index);
 
     if (orig == null) {
-      // Primary (original) failed.
-      if (_videoControllers.containsKey(index)) {
-        // Fast-path ctrl is already showing — keep it, mark done (not failed).
-        debugPrint('[SwipeVideo] original failed, keeping compressed idx=$index');
-        return;
-      }
-      // No fast-path and primary failed — try full fallback from network.
+      // Primary failed — try fallback URL.
       if (fallbackUrl != null) {
         final fallback = await initCachedVideoController(fallbackUrl, volume: 0);
         if (fallback != null) {
@@ -221,10 +166,7 @@ class _TemplateSwipeScreenState extends ConsumerState<TemplateSwipeScreen>
       return;
     }
 
-    // Original loaded — upgrade (or set if no fast-path).
-    debugPrint('[SwipeVideo] original ready, upgrading idx=$index');
-    final prev = _videoControllers[index]; // might be fast-path ctrl
-
+    debugPrint('[SwipeVideo] original ready idx=$index');
     final keep = {_currentIndex - 1, _currentIndex, _currentIndex + 1};
     if (!keep.contains(index) || !mounted) {
       orig.pause();
@@ -239,11 +181,7 @@ class _TemplateSwipeScreenState extends ConsumerState<TemplateSwipeScreen>
       orig.pause();
     }
     if (!mounted) { orig.dispose(); return; }
-
     setState(() => _videoControllers[index] = orig);
-    // Dispose the compressed placeholder after the new frame is painted.
-    prev?.pause();
-    prev?.dispose();
   }
 
   void _onCtrlValue(int index, VideoPlayerController ctrl) {
@@ -609,8 +547,7 @@ class _SwipePageState extends ConsumerState<_SwipePage>
   }
 }
 
-// Video layer: subscribes to controller and rebuilds exactly once (loading → ready).
-// Avoids the 60fps rebuild overhead of ValueListenableBuilder for a playing video.
+// Video layer: thumbnail is always shown; the video streams in and fades over it.
 class _VideoLayer extends StatefulWidget {
   const _VideoLayer({required this.controller, required this.template});
   final VideoPlayerController? controller;
@@ -622,6 +559,7 @@ class _VideoLayer extends StatefulWidget {
 
 class _VideoLayerState extends State<_VideoLayer> {
   bool _ready = false;
+  bool _visible = false;
 
   @override
   void initState() {
@@ -635,6 +573,7 @@ class _VideoLayerState extends State<_VideoLayer> {
     if (widget.controller != old.controller) {
       old.controller?.removeListener(_onValue);
       _ready = false;
+      _visible = false;
       _attach(widget.controller);
     }
   }
@@ -643,6 +582,10 @@ class _VideoLayerState extends State<_VideoLayer> {
     if (ctrl == null) return;
     if (ctrl.value.isInitialized) {
       _ready = true;
+      // Widget just mounted — trigger fade-in on next frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _visible = true);
+      });
     } else {
       ctrl.addListener(_onValue);
     }
@@ -651,7 +594,12 @@ class _VideoLayerState extends State<_VideoLayer> {
   void _onValue() {
     if (!_ready && (widget.controller?.value.isInitialized ?? false)) {
       widget.controller!.removeListener(_onValue);
-      if (mounted) setState(() => _ready = true);
+      if (mounted) {
+        setState(() => _ready = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _visible = true);
+        });
+      }
     }
   }
 
@@ -664,65 +612,40 @@ class _VideoLayerState extends State<_VideoLayer> {
   @override
   Widget build(BuildContext context) {
     final ctrl = widget.controller;
-    if (_ready && ctrl != null) {
-      return FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: ctrl.value.size.width,
-          height: ctrl.value.size.height,
-          child: VideoPlayer(ctrl),
-        ),
-      );
-    }
-    return _Placeholder(template: widget.template);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Thumbnail always visible — video streams over it.
+        _Placeholder(template: widget.template),
+
+        // Video fades in via AnimatedOpacity so there's no abrupt switch.
+        if (ctrl != null && _ready)
+          AnimatedOpacity(
+            opacity: _visible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 400),
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: ctrl.value.size.width,
+                height: ctrl.value.size.height,
+                child: VideoPlayer(ctrl),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
-// Placeholder: animated GIF if available, otherwise static thumbnail.
+// Placeholder shown while original video loads. GIF is intentionally omitted
+// in full-screen — animated previews look choppy when replaced by the original.
 class _Placeholder extends StatelessWidget {
   const _Placeholder({required this.template});
   final TemplateModel template;
 
   @override
   Widget build(BuildContext context) {
-    final gifUrl = template.gifUrl;
     final thumbUrl = template.thumbUrl;
-
-    if (gifUrl != null) {
-      return CachedNetworkImage(
-        imageUrl: gifUrl,
-        cacheManager: AppCacheManager(),
-        fit: BoxFit.cover,
-        memCacheWidth: 720,
-        memCacheHeight: 1280,
-        fadeInDuration: Duration.zero,
-        placeholder: (_, __) => thumbUrl != null
-            ? CachedNetworkImage(
-                imageUrl: thumbUrl,
-                cacheManager: AppCacheManager(),
-                fit: BoxFit.cover,
-                memCacheWidth: 720,
-                memCacheHeight: 1280,
-                fadeInDuration: Duration.zero,
-                errorWidget: (_, __, ___) =>
-                    const ColoredBox(color: Colors.black),
-              )
-            : const ColoredBox(color: Colors.black),
-        errorWidget: (_, __, ___) => thumbUrl != null
-            ? CachedNetworkImage(
-                imageUrl: thumbUrl,
-                cacheManager: AppCacheManager(),
-                fit: BoxFit.cover,
-                memCacheWidth: 720,
-                memCacheHeight: 1280,
-                fadeInDuration: Duration.zero,
-                errorWidget: (_, __, ___) =>
-                    const ColoredBox(color: Colors.black),
-              )
-            : const ColoredBox(color: Colors.black),
-      );
-    }
-
     if (thumbUrl != null) {
       return CachedNetworkImage(
         imageUrl: thumbUrl,
@@ -734,7 +657,6 @@ class _Placeholder extends StatelessWidget {
         errorWidget: (_, __, ___) => const ColoredBox(color: Colors.black),
       );
     }
-
     return const ColoredBox(color: Colors.black);
   }
 }

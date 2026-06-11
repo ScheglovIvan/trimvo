@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:trimvo/core/theme/app_colors.dart';
 import 'package:trimvo/core/theme/app_gradients.dart';
+import 'package:trimvo/core/widgets/app_background.dart';
 import 'package:trimvo/models/gem_package_model.dart';
 import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/providers/gem_packages_provider.dart';
 import 'package:trimvo/providers/iap_provider.dart';
+
+const _svipGradient = LinearGradient(
+  colors: [Color(0xFFFFAB9D), Color(0xFFFEFA19)],
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
+);
 
 class GemStoreScreen extends ConsumerStatefulWidget {
   const GemStoreScreen({super.key});
@@ -49,7 +57,7 @@ class _GemStoreScreenState extends ConsumerState<GemStoreScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
-      body: SafeArea(
+      body: AppBackground(child: SafeArea(
         child: Column(
           children: [
             _buildTopBar(context),
@@ -103,7 +111,7 @@ class _GemStoreScreenState extends ConsumerState<GemStoreScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -181,54 +189,82 @@ class _GemStoreScreenState extends ConsumerState<GemStoreScreen> {
     return GestureDetector(
       onTap: () => context.go('/paywall?svip=true'),
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: AppGradients.svipBadge,
-          borderRadius: BorderRadius.circular(16),
+          gradient: _svipGradient,
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '👑 Unlock SVIP',
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.backgroundPrimary,
+        padding: const EdgeInsets.all(1.5),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.backgroundCard,
+            borderRadius: BorderRadius.circular(18.5),
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18.5),
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFFFFAB9D).withOpacity(0.15),
+                        const Color(0xFFFEFA19).withOpacity(0.15),
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Generate videos for 50% fewer gems + Exclusive Perks',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppColors.backgroundPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.backgroundPrimary,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'UPGRADE',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.svipGold,
                 ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '👑 Unlock SVIP',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Generate videos for 50% fewer gems + Exclusive Perks',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        gradient: _svipGradient,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'UPGRADE',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -248,7 +284,7 @@ class _GemStoreScreenState extends ConsumerState<GemStoreScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.1,
+            childAspectRatio: 1.0,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: regular
@@ -314,7 +350,10 @@ class _GemPackageCard extends StatelessWidget {
 
   Widget _buildGrid(BuildContext context) {
     return GestureDetector(
-      onTap: isLoading ? null : onTap,
+      onTap: isLoading ? null : () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -362,7 +401,10 @@ class _GemPackageCard extends StatelessWidget {
 
   Widget _buildFullWidth(BuildContext context) {
     return GestureDetector(
-      onTap: isLoading ? null : onTap,
+      onTap: isLoading ? null : () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

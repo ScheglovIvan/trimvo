@@ -275,8 +275,8 @@ class _ResultScreenState extends State<ResultScreen>
                         color: Colors.black.withOpacity(0.5),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.arrow_back,
+                      child: Icon(
+                        Platform.isIOS ? Icons.arrow_back_ios_new : Icons.arrow_back,
                         color: Colors.white,
                         size: 20,
                       ),

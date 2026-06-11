@@ -69,7 +69,7 @@ class TermsOfServiceScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _body(
-          'Last updated: January 1, 2025\n\n'
+          'Last updated: June 11, 2026\n\n'
           'Please read these Terms of Service ("Terms") carefully before using the '
           'Trimvo mobile application operated by Trimvo ("us", "we", or "our"). '
           'By accessing or using the app you agree to be bound by these Terms.',
@@ -91,21 +91,27 @@ class TermsOfServiceScreen extends StatelessWidget {
         ),
         _section('3. Subscriptions and In-App Purchases'),
         _body(
-          'Trimvo offers VIP and SVIP subscription plans billed on a weekly or '
-          'yearly basis, as well as one-time Lifetime plans. All purchases are '
-          'processed through Apple App Store.\n\n'
-          '• Subscriptions automatically renew unless cancelled at least 24 hours '
-          'before the end of the current period.\n'
+          'Trimvo offers the following paid plans, all processed through Apple App Store:\n\n'
+          '• VIP Weekly — recurring weekly subscription.\n'
+          '• VIP Yearly — recurring annual subscription.\n'
+          '• SVIP Weekly — recurring weekly subscription.\n'
+          '• SVIP Lifetime — one-time purchase, permanent access.\n\n'
+          'Recurring subscriptions automatically renew unless cancelled at least '
+          '24 hours before the end of the current billing period. You can manage '
+          'or cancel subscriptions in your Apple ID settings.\n\n'
           '• Prices may vary by region and are displayed at the time of purchase.\n'
-          '• Refunds are handled by Apple in accordance with their policies.\n'
-          '• If an AI generation task fails, we provide a 100% gem refund.',
+          '• Refunds for App Store purchases are handled by Apple in accordance '
+          'with their refund policies.\n'
+          '• If an AI generation task fails due to a server error, we provide a '
+          '100% gem refund for that task.',
         ),
         _section('4. User Content'),
         _body(
           'You retain ownership of the photos and media you upload. By using the app '
-          'you grant us a limited licence to process your media solely for the purpose '
-          'of providing the AI generation service. We do not claim ownership of your '
-          'content and we do not use it to train AI models without explicit consent.',
+          'you grant us a limited licence to process and store your media solely for '
+          'the purpose of providing the AI generation service and displaying your '
+          'generation history. We do not claim ownership of your content and we do '
+          'not use it to train AI models without your explicit consent.',
         ),
         _section('5. Prohibited Uses'),
         _body(
@@ -147,7 +153,7 @@ class TermsOfServiceScreen extends StatelessWidget {
         _section('10. Contact Us'),
         _body(
           'If you have any questions about these Terms, please contact us:\n\n'
-          'Trimvo Support\nEmail: legal@hypcut.app',
+          'Trimvo\nEmail: support@trimvo.xyz',
         ),
         const SizedBox(height: 24),
       ],

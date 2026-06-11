@@ -38,7 +38,10 @@ class _LocalBackgroundVideoState extends State<LocalBackgroundVideo>
 
   Future<void> _initVideo() async {
     try {
-      final ctrl = VideoPlayerController.asset(widget.assetPath);
+      final ctrl = VideoPlayerController.asset(
+        widget.assetPath,
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      );
       await ctrl.initialize();
       await ctrl.setLooping(true);
       await ctrl.setVolume(0);

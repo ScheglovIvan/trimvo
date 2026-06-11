@@ -32,7 +32,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_onTabChanged);
   }
 
@@ -97,7 +97,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
               tabs: const [
                 Tab(text: 'My Works'),
                 Tab(text: 'Favorites'),
-                Tab(text: 'Recently'),
               ],
             ),
 
@@ -110,7 +109,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen>
                 children: [
                   _MyWorksTab(isActive: _activeTabIndex == 0),
                   _FavoritesTab(isActive: _activeTabIndex == 1),
-                  const _ComingSoonTab(icon: Icons.history_rounded),
                 ],
               ),
             ),
@@ -791,37 +789,6 @@ class _TypeBadge extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Coming Soon stub
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ComingSoonTab extends StatelessWidget {
-  const _ComingSoonTab({required this.icon});
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppColors.textHint, size: 56),
-          const SizedBox(height: 16),
-          Text(
-            'Coming soon',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
             ),
           ),
         ],

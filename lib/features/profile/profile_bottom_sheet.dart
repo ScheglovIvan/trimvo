@@ -6,6 +6,7 @@ import 'package:trimvo/core/theme/app_colors.dart';
 import 'package:trimvo/core/theme/app_gradients.dart';
 import 'package:trimvo/features/auth/login_bottom_sheet.dart';
 import 'package:trimvo/providers/auth_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Same gradients as paywall_screen.dart so active-subscription card matches
 // the selected plan card exactly.
@@ -638,9 +639,10 @@ class _MenuSection extends StatelessWidget {
   final VoidCallback onSignOut;
   final VoidCallback onDeleteAccount;
 
-  static const _staticItems = [
-    ('✍️', 'Feedback', ''),
-    ('💬', 'Join Discord for real-time support', ''),
+  static const _feedbackUrl =
+      'mailto:support@trimvo.xyz?subject=Trimvo%20App%20Feedback';
+
+  static const _routeItems = [
     ('📄', 'Privacy Policy', '/privacy'),
     ('📋', 'Terms of Service', '/terms'),
   ];
@@ -651,10 +653,22 @@ class _MenuSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(
         children: [
-          ..._staticItems.map(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _MenuItem(
+              emoji: '✍️',
+              label: 'Send Feedback',
+              onTap: () => launchUrl(Uri.parse(_feedbackUrl)),
+            ),
+          ),
+          ..._routeItems.map(
             (item) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: _MenuItem(emoji: item.$1, label: item.$2, route: item.$3),
+              child: _MenuItem(
+                emoji: item.$1,
+                label: item.$2,
+                onTap: () => context.push(item.$3),
+              ),
             ),
           ),
           if (isLoggedIn) ...[
@@ -866,17 +880,17 @@ class _MenuItem extends StatelessWidget {
   const _MenuItem({
     required this.emoji,
     required this.label,
-    required this.route,
+    required this.onTap,
   });
 
   final String emoji;
   final String label;
-  final String route;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: route.isNotEmpty ? () => context.push(route) : null,
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

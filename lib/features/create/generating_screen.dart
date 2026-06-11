@@ -200,8 +200,8 @@ class _PollingViewState extends ConsumerState<_PollingView> {
                             color: AppColors.backgroundCard,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.arrow_back,
+                          child: Icon(
+                            Platform.isIOS ? Icons.arrow_back_ios_new : Icons.arrow_back,
                             color: AppColors.textPrimary,
                             size: 20,
                           ),

@@ -69,7 +69,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _body(
-          'Last updated: January 1, 2025\n\n'
+          'Last updated: June 11, 2026\n\n'
           'Trimvo ("we", "our", or "us") is committed to protecting your privacy. '
           'This Privacy Policy explains how we collect, use, disclose, and safeguard '
           'your information when you use our mobile application.',
@@ -77,10 +77,15 @@ class PrivacyPolicyScreen extends StatelessWidget {
         _section('1. Information We Collect'),
         _body(
           'We may collect the following types of information:\n\n'
+          '• Account information: email address and password (hashed) that you provide '
+          'when registering.\n'
           '• Device information: device type, operating system, unique device identifiers.\n'
           '• Usage data: features used, content created, time spent in the app.\n'
-          '• Photos and media: images you choose to upload for AI processing (processed '
-          'on-device or via secure servers and not stored beyond session).\n'
+          '• Photos and media: images you choose to upload for AI processing. Uploaded '
+          'media is stored on our secure servers for the duration of your account to '
+          'enable your generation history; you may delete it at any time.\n'
+          '• Generated content: AI-generated videos and images produced by the service, '
+          'stored in your account history.\n'
           '• Purchase information: subscription status and transaction identifiers via '
           'Apple App Store (we do not store payment card details).',
         ),
@@ -89,6 +94,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
           'We use your information to:\n\n'
           '• Provide and improve the Trimvo service.\n'
           '• Process AI video and image generation requests.\n'
+          '• Store and display your generation history.\n'
           '• Manage your subscription and in-app purchases.\n'
           '• Send important service notifications.\n'
           '• Analyse usage patterns to improve the app experience.\n'
@@ -99,16 +105,17 @@ class PrivacyPolicyScreen extends StatelessWidget {
           'We do not sell your personal data. We may share information with:\n\n'
           '• AI processing partners who assist in generating content (under strict '
           'data processing agreements).\n'
-          '• Analytics providers (e.g. aggregated, anonymised data only).\n'
+          '• Cloud storage providers who host your media and generated content.\n'
           '• Payment processors (Apple) who handle transactions on our behalf.\n'
           '• Law enforcement or regulatory authorities when required by law.',
         ),
         _section('4. Data Retention'),
         _body(
-          'We retain personal data only as long as necessary to provide our services '
-          'or as required by law. Uploaded media used for AI generation is deleted '
-          'from our servers within 24 hours of processing. You may request deletion '
-          'of your account data at any time by contacting us.',
+          'We retain your account data, uploaded media, and generated content for as '
+          'long as your account is active or as required by law. You may delete '
+          'individual generated items from your history at any time. You may request '
+          'full deletion of your account and all associated data through the app '
+          '(Profile → Delete Account) or by contacting us.',
         ),
         _section("5. Children's Privacy"),
         _body(
@@ -130,7 +137,8 @@ class PrivacyPolicyScreen extends StatelessWidget {
           '• Request correction or deletion of your data.\n'
           '• Object to or restrict processing of your data.\n'
           '• Data portability.\n\n'
-          'To exercise these rights, contact us at the email below.',
+          'To exercise these rights, use the in-app Delete Account feature or '
+          'contact us at the email below.',
         ),
         _section('8. Changes to This Policy'),
         _body(
@@ -141,7 +149,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
         _section('9. Contact Us'),
         _body(
           'If you have any questions about this Privacy Policy, please contact us:\n\n'
-          'Trimvo Support\nEmail: privacy@hypcut.app',
+          'Trimvo\nEmail: support@trimvo.xyz',
         ),
         const SizedBox(height: 24),
       ],

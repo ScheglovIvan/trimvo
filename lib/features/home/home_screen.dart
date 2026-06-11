@@ -198,20 +198,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       Row(
                         children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF1A1A28),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.notifications_none_rounded,
-                              color: AppColors.textPrimary,
-                              size: 22,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
                           GestureDetector(
                             onTap: () => showProfileBottomSheet(context),
                             child: Container(

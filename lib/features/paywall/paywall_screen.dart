@@ -26,9 +26,11 @@ const _vipBadgeGradient = LinearGradient(
   end: Alignment.centerRight,
 );
 
-enum _Plan { yearly, weekly }
-
 enum _Tier { vip, svip }
+
+/// Default selection. Every tier the backend serves has a weekly plan; if one
+/// ever does not, _resolveSelectedPlan falls back to that tier's first card.
+const _kDefaultPeriod = 'weekly';
 
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key, this.initialSvip = false});
@@ -40,7 +42,7 @@ class PaywallScreen extends ConsumerStatefulWidget {
 }
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
-  _Plan _plan = _Plan.weekly;
+  String _period = _kDefaultPeriod;
   late _Tier _tier;
 
   @override
@@ -56,33 +58,47 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
   bool get _isVip => _tier == _Tier.vip;
 
-  SubscriptionPlanModel? _resolveSelectedPlan() {
-    final plans = ref.read(subscriptionPlansProvider).valueOrNull;
-    if (plans == null || plans.isEmpty) return null;
-    final tier = _isVip ? 'vip' : 'svip';
-    final period = _plan == _Plan.weekly ? 'weekly' : 'yearly';
-    return plans.where((p) => p.tier == tier && p.period == period).firstOrNull
-        ?? plans.where((p) => p.tier == tier).firstOrNull;
-  }
+  String get _tierKey => _isVip ? 'vip' : 'svip';
+
+  List<SubscriptionPlanModel> _allPlans() =>
+      ref.read(subscriptionPlansProvider).valueOrNull ?? const [];
+
+  /// The plan the CTA will actually purchase. Card highlight and button label
+  /// are both derived from this, so what the user sees is what StoreKit gets.
+  SubscriptionPlanModel? _resolveSelectedPlan() =>
+      resolvePlanFor(_allPlans(), _tierKey, _period);
 
   void _onPurchaseTap() {
     final plan = _resolveSelectedPlan();
     if (plan == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Plan not available')),
+        const SnackBar(
+          content: Text('Plans are still loading. Please try again.'),
+        ),
       );
       return;
     }
+    debugPrint('[Paywall] buying ${plan.name} '
+        '(${plan.period}/${plan.appleProductId})');
     ref.read(iapProvider.notifier).purchaseSubscription(plan);
   }
 
   LinearGradient get _activeGradient => _isVip ? _vipGradient : _svipGradient;
 
   String get _buttonLabel {
-    if (_isVip) {
-      return _plan == _Plan.weekly ? 'Get Weekly VIP' : 'Get Yearly VIP';
+    final tierLabel = _isVip ? 'VIP' : 'SVIP';
+    final resolved = _resolveSelectedPlan();
+    final period = resolved?.period ?? _period;
+    switch (period) {
+      case 'lifetime':
+        return 'Get Lifetime $tierLabel';
+      case 'yearly':
+        return 'Get Yearly $tierLabel';
+      case 'weekly':
+        return 'Get Weekly $tierLabel';
+      default:
+        return resolved != null ? 'Get ${resolved.name}' : 'Continue';
     }
-    return _plan == _Plan.weekly ? 'Get Weekly SVIP' : 'Get Lifetime SVIP';
   }
 
   @override
@@ -285,7 +301,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() {
           _tier = tier;
-          _plan = _Plan.weekly;
+          _period = _kDefaultPeriod;
         }),
         child: Padding(
           padding: const EdgeInsets.all(4),
@@ -376,12 +392,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           loading: () => _buildCardsShimmer(),
           error: (_, __) => _isVip ? _buildVipCardsFallback() : _buildSvipCardsFallback(),
           data: (plans) {
-            final tier = _isVip ? 'vip' : 'svip';
-            final filtered = plans.where((p) => p.tier == tier).toList()
-              ..sort((a, b) {
-                const order = ['lifetime', 'yearly', 'weekly'];
-                return order.indexOf(a.period).compareTo(order.indexOf(b.period));
-              });
+            final filtered = plansForTier(plans, _tierKey);
             if (filtered.isEmpty) {
               return _isVip ? _buildVipCardsFallback() : _buildSvipCardsFallback();
             }
@@ -414,19 +425,18 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   }
 
   Widget _buildDynamicCards(List<SubscriptionPlanModel> plans) {
-    final tierKey = _isVip ? 'vip' : 'svip';
-    // Select the first plan as default if nothing selected yet
-    final selectedPeriod = _plan == _Plan.yearly ? 'yearly' : _plan == _Plan.weekly ? 'weekly' : 'lifetime';
+    // Highlight exactly the plan _resolveSelectedPlan() would buy, including
+    // its fallback to the first card when the selected period has no plan.
+    final selected = _resolveSelectedPlan();
 
     return Column(
-      key: ValueKey(tierKey),
+      key: ValueKey(_tierKey),
       children: [
         for (var i = 0; i < plans.length; i++) ...[
           if (i > 0) const SizedBox(height: 12),
           Builder(builder: (_) {
             final p = plans[i];
-            final isSelected = p.period == selectedPeriod ||
-                (i == 0 && !plans.any((x) => x.period == selectedPeriod));
+            final isSelected = identical(p, selected);
             return _PlanCard(
               title: p.name,
               price: p.priceDisplay,
@@ -437,13 +447,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
               gradient: _activeGradient,
               badgeText: p.badgeText,
               badgeGradient: _isVip ? _vipBadgeGradient : null,
-              onTap: () => setState(() {
-                if (p.period == 'weekly') {
-                  _plan = _Plan.weekly;
-                } else {
-                  _plan = _Plan.yearly;
-                }
-              }),
+              onTap: () => setState(() => _period = p.period),
             );
           }),
         ],
@@ -472,11 +476,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           billingInfo: '${fmt('2 099,99')}/year  ·  Billed yearly',
           bonusAmount: '+3000',
           bonusLabel: 'BONUS',
-          isSelected: _plan == _Plan.yearly,
+          isSelected: _period == 'yearly',
           gradient: _activeGradient,
           badgeText: '🏷  50% OFF',
           badgeGradient: _vipBadgeGradient,
-          onTap: () => setState(() => _plan = _Plan.yearly),
+          onTap: () => setState(() => _period = 'yearly'),
         ),
         const SizedBox(height: 12),
         _PlanCard(
@@ -485,9 +489,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           billingInfo: '${fmt('419,99')}/week  ·  Billed weekly',
           bonusAmount: '+400',
           bonusLabel: 'INCLUDED',
-          isSelected: _plan == _Plan.weekly,
+          isSelected: _period == 'weekly',
           gradient: _activeGradient,
-          onTap: () => setState(() => _plan = _Plan.weekly),
+          onTap: () => setState(() => _period = 'weekly'),
         ),
       ],
     );
@@ -512,10 +516,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           billingInfo: 'Pay once, enjoy forever',
           bonusAmount: '+6000',
           bonusLabel: 'BONUS',
-          isSelected: _plan == _Plan.yearly,
+          isSelected: _period == 'lifetime',
           gradient: _activeGradient,
           badgeText: '🔥  BEST VALUE',
-          onTap: () => setState(() => _plan = _Plan.yearly),
+          onTap: () => setState(() => _period = 'lifetime'),
         ),
         const SizedBox(height: 12),
         _PlanCard(
@@ -524,9 +528,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
           billingInfo: '${fmt('529,99')}/week  ·  Billed weekly',
           bonusAmount: '+600',
           bonusLabel: 'INCLUDED',
-          isSelected: _plan == _Plan.weekly,
+          isSelected: _period == 'weekly',
           gradient: _activeGradient,
-          onTap: () => setState(() => _plan = _Plan.weekly),
+          onTap: () => setState(() => _period = 'weekly'),
         ),
       ],
     );

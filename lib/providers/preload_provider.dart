@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trimvo/models/category_model.dart';
 import 'package:trimvo/models/template_model.dart';
 import 'package:trimvo/providers/auth_provider.dart';
 import 'package:trimvo/providers/categories_provider.dart';
+import 'package:trimvo/providers/iap_provider.dart';
 import 'package:trimvo/providers/pricing_provider.dart';
 import 'package:trimvo/providers/templates_provider.dart';
 import 'package:trimvo/shared/widgets/app_cache_manager.dart';
@@ -37,6 +40,12 @@ class PreloadNotifier extends StateNotifier<PreloadState> {
 
     // Auth
     try { await _ref.read(authProvider.notifier).loadFromStorage(); } catch (_) {}
+
+    // StoreKit: attach the purchase listener and clear any transaction left
+    // unfinished by a previous session. Must happen before the paywall can be
+    // opened, otherwise a stale transaction blocks the next purchase.
+    // Runs detached so a slow App Store call never delays the splash.
+    unawaited(_ref.read(iapProvider.notifier).init());
 
     // Pricing + categories
     List<CategoryModel> cats = [];

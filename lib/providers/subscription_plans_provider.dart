@@ -72,3 +72,35 @@ final subscriptionPlansProvider =
   final raw = await ApiService.getSubscriptionPlans();
   return raw.map(SubscriptionPlanModel.fromJson).toList();
 });
+
+/// Plans of a tier, ordered exactly the way the paywall renders its cards.
+List<SubscriptionPlanModel> plansForTier(
+  List<SubscriptionPlanModel> plans,
+  String tier,
+) {
+  const order = ['lifetime', 'yearly', 'weekly'];
+  int rank(String period) {
+    final i = order.indexOf(period);
+    return i == -1 ? order.length : i;
+  }
+
+  return plans.where((p) => p.tier == tier).toList()
+    ..sort((a, b) => rank(a.period).compareTo(rank(b.period)));
+}
+
+/// The plan a paywall CTA must purchase for [tier] + [period].
+///
+/// Matching is strict on `period`: falling back to "some other plan of the same
+/// tier" once made the Lifetime button charge the weekly subscription, because
+/// `lifetime` was looked up as `yearly`. When the selected period has no plan,
+/// the first rendered card wins — which is also the card the UI highlights.
+SubscriptionPlanModel? resolvePlanFor(
+  List<SubscriptionPlanModel> plans,
+  String tier,
+  String period,
+) {
+  final tierPlans = plansForTier(plans, tier);
+  if (tierPlans.isEmpty) return null;
+  return tierPlans.where((p) => p.period == period).firstOrNull
+      ?? tierPlans.first;
+}
